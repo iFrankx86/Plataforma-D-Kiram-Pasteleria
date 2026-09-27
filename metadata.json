@@ -1,0 +1,7 @@
+{
+  "name": "D' Kiram Pastelería - Sistema de Gestión Comercial y POS",
+  "description": "Sistema integral de gestión comercial, ventas POS (Efectivo, Yape, Plin), control de caja, turnos, inventario y reportes para D' Kiram Pastelería.",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

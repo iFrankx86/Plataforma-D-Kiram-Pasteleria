@@ -1,0 +1,752 @@
+INFORME TÉCNICO DE INGENIERÍA DE SOFTWARE
+Sistema Integral de Gestión Comercial, Ventas, Caja e Inventario
+D' Kiram Pastelería
+1. Resumen ejecutivo
+D' Kiram Pastelería requiere un sistema que permita administrar de manera centralizada sus productos, categorías, inventario, ventas, métodos de pago, caja y turnos de empleados.
+El sistema será diseñado como una aplicación web Mobile First y PWA, permitiendo su utilización principalmente desde teléfonos y tablets, sin excluir computadoras.
+La arquitectura será un monolito modular, utilizando React + TypeScript para el frontend y Java + Spring Boot para el backend, con PostgreSQL como sistema gestor de base de datos y Supabase como proveedor de PostgreSQL administrado.
+La solución separará explícitamente venta, detalle de venta, pago, caja, movimiento de caja, inventario, movimiento de inventario y turno de empleado para mantener consistencia transaccional y trazabilidad.
+2. Objetivo general
+Desarrollar un sistema web/PWA para D' Kiram Pastelería que permita gestionar integralmente productos, categorías, inventario, ventas, pagos, caja y turnos de empleados, proporcionando información operacional y reportes para facilitar el control diario del negocio.
+3. Objetivos específicos
+Administrar productos y categorías.
+Controlar cantidades disponibles de inventario.
+Registrar entradas, salidas, mermas y ajustes.
+Registrar ventas con uno o varios productos.
+Registrar pagos en efectivo, Yape y Plin.
+Permitir excepcionalmente pagos divididos entre dos métodos.
+Gestionar apertura y cierre de caja.
+Determinar efectivo esperado y efectivo contado.
+Detectar diferencias de caja.
+Gestionar empleados y turnos.
+Aplicar control de acceso por roles.
+Generar reportes de ventas, caja e inventario.
+Mantener trazabilidad de operaciones críticas.
+Permitir crecimiento futuro hacia pedidos, clientes, delivery y comprobantes electrónicos.
+4. Alcance del sistema
+4.1 Alcance del MVP
+Autenticación: inicio/cierre de sesión, recuperación de acceso, control de sesiones, roles y permisos.
+Productos: CRUD, precios, costos, stock, stock mínimo, unidad, descripción, imagen y estado.
+Categorías: Tortas; Postres; Pasteles y Queques; Bocaditos; Bebidas; Regalos / Extras.
+Ventas: nueva venta, búsqueda, carrito, cantidades, cálculo automático, descuento autorizado, confirmación, anulación controlada e historial.
+Pagos: Efectivo, Yape, Plin y pago mixto.
+Caja: apertura, estado, movimientos, cierre, arqueo y diferencias.
+Inventario: entradas, salidas, mermas, ajustes, historial y alertas.
+Empleados: CRUD, roles, turnos y estado.
+Reportes: ventas, caja, métodos de pago, inventario, productos, categorías y margen bruto estimado.
+5. Decisiones arquitectónicas
+5.1 Monolito modular
+La primera versión utilizará un único backend desplegable, organizado internamente por módulos. No se recomienda comenzar con microservicios, porque introduciría complejidad operativa innecesaria para una única pastelería.
+backend/
+└── com.dkirampasteleria
+    ├── auth/
+    ├── users/
+    ├── employees/
+    ├── products/
+    ├── categories/
+    ├── inventory/
+    ├── sales/
+    ├── payments/
+    ├── cash/
+    ├── shifts/
+    └── reports/
+6. Stack tecnológico definitivo
+7. Base de datos: PostgreSQL + Supabase
+Supabase será utilizado principalmente como proveedor administrado de PostgreSQL y, opcionalmente, para Storage de imágenes de productos. React no se conectará directamente a la base de datos.
+React / PWA
+    ↓ HTTPS
+Spring Boot REST API
+    ↓
+PostgreSQL en Supabase
+    ↓
+Supabase Storage (imágenes)
+La base de datos trabajará internamente con UTC para timestamps y la interfaz mostrará las fechas en la zona horaria America/Lima.
+8. Modelo funcional del negocio
+Empleado inicia sesión
+        ↓
+Comprueba caja
+        ↓
+Abre caja
+        ↓
+Registra venta
+        ↓
+Selecciona productos
+        ↓
+Calcula total
+        ↓
+Selecciona método de pago
+        ↓
+Confirma
+        ↓
+Registra venta
+        ↓
+Registra pago
+        ↓
+Descuenta inventario
+        ↓
+Registra movimiento de caja
+9. Regla fundamental de pagos
+El comportamiento normal será un único método de pago por venta. El sistema soportará un segundo pago únicamente cuando sea necesario.
+Caso normal:
+Venta S/25.50 → Yape S/25.50
+
+Caso normal:
+Venta S/25.50 → Efectivo S/25.50
+
+Caso excepcional:
+Venta S/25.50 → Yape S/20.00 + Efectivo S/5.50
+El modelo será Venta 1..N Pagos, pero la interfaz priorizará Efectivo, Yape y Plin, dejando Pago dividido como una opción secundaria.
+Solo el componente pagado en efectivo incrementará el efectivo físico esperado de la caja.
+10. Modelo de ventas
+10.1 Venta
+venta
+-----
+id
+codigo
+usuario_id
+empleado_id
+caja_id
+subtotal
+descuento
+total
+estado
+created_at
+updated_at
+10.2 Detalle de venta
+detalle_venta
+-------------
+id
+venta_id
+producto_id
+producto_nombre
+cantidad
+precio_unitario
+subtotal
+El precio unitario debe almacenarse en el detalle de la venta para preservar el precio histórico aunque posteriormente cambie el precio del producto.
+11. Modelo de pagos
+pago_venta
+----------
+id
+venta_id
+metodo_pago_id
+monto
+created_at
+Regla crítica: la suma de los pagos debe ser exactamente igual al total de la venta. La venta no puede confirmarse si ambas cantidades no coinciden.
+12. Métodos de pago
+EFECTIVO
+YAPE
+PLIN
+El diseño permitirá incorporar posteriormente tarjeta, transferencia o POS sin modificar profundamente el modelo.
+13. Gestión de caja
+cash_register
+-------------
+id
+codigo
+employee_id
+opened_at
+opening_amount
+status
+La caja funcionará mediante sesiones de apertura y cierre.
+14. Movimientos de caja
+cash_movement
+-------------
+id
+cash_register_id
+type
+amount
+reason
+reference
+created_at
+created_by
+APERTURA
+INGRESO
+VENTA_EFECTIVO
+EGRESO
+RETIRO
+AJUSTE
+15. Ejemplo de caja
+Apertura: S/150.00
+
+Ventas:
+Efectivo: S/100.00
+Yape:     S/250.00
+Plin:     S/50.00
+
+Efectivo esperado:
+150 + 100 = S/250.00
+
+Ventas totales:
+100 + 250 + 50 = S/400.00
+La conclusión de diseño es que total de ventas no es equivalente al efectivo físico de caja.
+16. Cierre de caja
+Monto inicial
++ ingresos en efectivo
+- egresos
+= efectivo esperado
+
+diferencia =
+efectivo contado - efectivo esperado
+El sistema deberá registrar cualquier diferencia y, según permisos, solicitar una observación o motivo.
+17. Inventario
+inventory_movement
+------------------
+id
+product_id
+type
+quantity
+stock_before
+stock_after
+reason
+reference_type
+reference_id
+created_by
+created_at
+ENTRADA
+VENTA
+MERMA
+AJUSTE
+DEVOLUCION
+El stock actual podrá mantenerse en el producto para consultas rápidas, pero el historial de movimientos será la trazabilidad del inventario.
+18. Control de stock
+Para el MVP, una venta que solicite una cantidad superior al stock disponible será rechazada. El backend deberá validar la disponibilidad, no únicamente el frontend.
+La actualización deberá considerar concurrencia cuando dos dispositivos intenten vender simultáneamente las últimas unidades.
+19. Dinero y precisión
+Nunca se utilizarán float o double para importes monetarios.
+Java:
+BigDecimal
+
+PostgreSQL:
+NUMERIC(12,2)
+20. Costo y ganancia
+El sistema distinguirá entre ingresos por ventas y margen bruto. Para calcular margen se requiere almacenar costo unitario.
+precio_venta = S/1.50
+costo_unitario = S/0.80
+margen bruto unitario = S/0.70
+El margen bruto no equivale a utilidad neta, porque esta última requiere considerar gastos operativos.
+21. Productos
+product
+-------
+id UUID
+sku
+name
+description
+category_id
+sale_price
+cost_price
+stock_current
+stock_minimum
+unit
+image_path
+active
+created_at
+updated_at
+22. Categorías
+category
+--------
+id
+name
+description
+active
+created_at
+updated_at
+Tortas
+Postres
+Pasteles y Queques
+Bocaditos
+Bebidas
+Regalos / Extras
+23. Empleados y turnos
+employee
+--------
+id
+document_number
+first_name
+last_name
+phone
+email
+position
+active
+created_at
+updated_at
+
+employee_shift
+--------------
+id
+employee_id
+date
+start_time
+end_time
+status
+notes
+24. Roles y permisos
+ADMIN
+Gestionar productos, inventario, ventas, caja, reportes, empleados, usuarios y auditoría.
+CAJERO
+Consultar productos, registrar ventas, consultar ventas, abrir/cerrar caja y registrar operaciones permitidas.
+INVENTARIO
+Gestionar productos, entradas, salidas, ajustes, mermas e inventario.
+La autorización definitiva debe ejecutarse en Spring Security; ocultar botones en React no constituye seguridad.
+25. Auditoría
+audit_log
+---------
+id
+user_id
+action
+entity
+entity_id
+old_value
+new_value
+created_at
+ip
+Se deberán auditar como mínimo cambios de precio, modificaciones de stock, anulaciones, aperturas y cierres de caja y cambios de usuarios.
+26. Regla de eliminación
+No se recomienda eliminar físicamente ventas, pagos, cierres o movimientos históricos. Se utilizarán estados, desactivación o anulación.
+27. Transacciones
+@Transactional
+registrarVenta()
+
+1. Validar caja
+2. Validar productos
+3. Validar stock
+4. Crear venta
+5. Crear detalles
+6. Registrar pagos
+7. Descontar stock
+8. Registrar movimientos de inventario
+9. Registrar movimiento de caja
+10. Confirmar
+Si una operación falla, se deberá ejecutar rollback para evitar una venta parcialmente almacenada.
+28. API REST
+Prefijo:
+ /api/v1
+
+Auth:
+POST /auth/login
+POST /auth/refresh
+POST /auth/logout
+
+Categories:
+GET/POST /categories
+GET/PUT /categories/{id}
+PATCH /categories/{id}/status
+
+Products:
+GET/POST /products
+GET/PUT /products/{id}
+PATCH /products/{id}/status
+
+Sales:
+GET/POST /sales
+GET /sales/{id}
+POST /sales/{id}/void
+
+Cash:
+POST /cash/registers/open
+GET /cash/registers/current
+GET /cash/registers/{id}
+POST /cash/registers/{id}/movements
+POST /cash/registers/{id}/close
+
+Inventory:
+GET /inventory
+GET /inventory/movements
+POST /inventory/entries
+POST /inventory/adjustments
+POST /inventory/shrinkage
+
+Reports:
+GET /reports/sales/daily
+GET /reports/sales/by-product
+GET /reports/sales/by-category
+GET /reports/payments
+GET /reports/cash
+GET /reports/inventory
+GET /reports/profit
+29. Estructura backend
+src/main/java/com/dkiram/
+
+├── shared/
+│   ├── exception/
+│   ├── security/
+│   ├── validation/
+│   ├── config/
+│   └── response/
+├── auth/
+├── product/
+├── inventory/
+├── sales/
+├── payment/
+├── cash/
+├── employee/
+├── shift/
+├── report/
+└── audit/
+30. Patrones de diseño
+Repository Pattern para acceso a datos.
+Service Layer para reglas de negocio.
+DTO Pattern para separar contratos API y entidades.
+MapStruct para mapeo DTO/entidad.
+Strategy Pattern únicamente donde existan comportamientos diferenciados de pago.
+Global Exception Handler mediante @RestControllerAdvice.
+31. Seguridad
+HTTPS
+ ↓
+Autenticación
+ ↓
+Spring Security
+ ↓
+Roles / permisos
+ ↓
+Validación
+ ↓
+Base de datos
+Las contraseñas se almacenarán mediante hashing seguro, por ejemplo Argon2 o BCrypt. Las credenciales y secretos deberán permanecer fuera del repositorio.
+32. Frontend Mobile First
+La aplicación se diseñará primero para teléfonos y tablets y posteriormente se adaptará a escritorio. El flujo principal de venta deberá minimizar el número de pasos.
+Inicio
+Ventas
+Productos
+Caja
+Más
+33. Dashboard
+D' Kiram
+Ventas de hoy: S/1,285.50
+
+Efectivo: S/650.00
+Yape:     S/480.50
+Plin:     S/155.00
+
+Productos vendidos: 342
+Stock bajo: 8
+
+[ + Nueva venta ]
+34. Pantalla de venta
+Nueva venta
+
+[ Buscar producto... ]
+
+Tortas | Postres | Pasteles
+Bocaditos | Bebidas | Regalos
+
+Muffin de Chispas
+S/1.50
+[-] 3 [+]
+
+Café
+S/3.00
+[-] 1 [+]
+
+TOTAL: S/7.50
+
+[ Continuar ]
+35. Pantalla de pago
+TOTAL: S/7.50
+
+[ EFECTIVO ]
+[ YAPE ]
+[ PLIN ]
+[ PAGO DIVIDIDO ]
+
+Pago dividido:
+Yape     S/20.00
+Efectivo S/5.50
+Restante S/0.00
+La opción de pago dividido debe ser secundaria para mantener la velocidad de operación en las ventas normales.
+36. Reportes
+Ventas diarias y por rango de fechas.
+Ticket promedio.
+Ventas por producto.
+Ventas por categoría.
+Ventas por empleado.
+Efectivo, Yape y Plin.
+Movimientos y diferencias de caja.
+Stock y productos con stock bajo.
+Mermas y ajustes.
+Margen bruto estimado.
+37. Requisitos funcionales
+38. Requisitos no funcionales
+39. Reglas de negocio
+Una venta debe contener al menos un producto.
+La cantidad debe ser mayor que cero.
+La suma de pagos debe ser igual al total.
+Una venta confirmada no puede editarse libremente.
+Una venta confirmada no se elimina físicamente.
+Las anulaciones deben quedar auditadas.
+Solo efectivo afecta el efectivo esperado.
+Yape y Plin no aumentan el efectivo físico.
+Un pago mixto debe sumar exactamente el total.
+No se puede vender más stock del disponible bajo la política MVP.
+No se puede cerrar una caja ya cerrada.
+Un producto inactivo no puede agregarse a una nueva venta.
+El precio histórico se conserva en cada detalle de venta.
+40. Índices iniciales
+product(category_id)
+product(active)
+sale(created_at)
+sale(employee_id)
+sale(cash_register_id)
+payment_sale(method_id)
+payment_sale(venta_id)
+inventory_movement(product_id)
+inventory_movement(created_at)
+41. PWA
+La aplicación será instalable desde el navegador y ofrecerá una experiencia semejante a una aplicación móvil. Para el MVP se utilizará PWA sin implementar un POS offline completo; la sincronización offline de ventas, stock y caja queda como evolución futura.
+42. Infraestructura
+INTERNET
+   ↓
+Vercel
+React/PWA
+   ↓ HTTPS
+Render/Railway/AWS
+Spring Boot API
+   ↓ TLS
+Supabase PostgreSQL
+   ↓
+Supabase Storage
+43. Docker y variables de entorno
+DB_URL
+DB_USERNAME
+DB_PASSWORD
+JWT_SECRET
+CORS_ORIGINS
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+Los secretos no deben almacenarse en GitHub.
+44. CI/CD
+git push
+   ↓
+GitHub Actions
+   ↓
+Build Frontend
+   ↓
+Tests Frontend
+   ↓
+Build Backend
+   ↓
+Unit Tests
+   ↓
+Integration Tests
+   ↓
+Docker
+   ↓
+Deploy
+Ramas sugeridas: main, develop, feature/*, fix/* y hotfix/*.
+45. Estrategia de desarrollo
+46. Testing
+Unit tests para SaleService, PaymentService, CashService, InventoryService y ProductService.
+Integration tests con Spring Boot + PostgreSQL mediante Testcontainers.
+E2E: login → abrir caja → vender → pagar → verificar stock → cerrar caja.
+Vitest + React Testing Library para frontend.
+47. Casos de prueba críticos
+Venta de un producto.
+Venta de varios productos.
+Pago en efectivo.
+Pago Yape.
+Pago Plin.
+Pago mixto.
+Pago insuficiente.
+Pago superior con cálculo de vuelto.
+Stock insuficiente.
+Venta concurrente del último stock.
+Apertura de caja.
+Cierre correcto.
+Cierre con diferencia.
+Anulación.
+Cambio de precio posterior a una venta histórica.
+48. Criterios de aceptación
+Se puede iniciar sesión.
+Se puede abrir caja.
+Se puede registrar producto y stock.
+Se puede registrar una venta con uno o varios productos.
+Se puede pagar en efectivo, Yape o Plin.
+Se puede realizar pago mixto.
+El stock se descuenta automáticamente.
+La caja actualiza solamente el efectivo.
+El cierre calcula efectivo esperado.
+Se calcula diferencia de caja.
+Las ventas quedan históricamente almacenadas.
+Las ventas no se eliminan físicamente.
+Las operaciones críticas quedan auditadas.
+Los roles restringen funcionalidades.
+Los reportes coinciden con la información de la base de datos.
+49. Riesgos técnicos y mitigaciones
+50. Estructura del repositorio
+dkiram/
+├── frontend/
+├── backend/
+├── database/
+│   ├── migrations/
+│   ├── seeds/
+│   └── docs/
+├── docs/
+│   ├── architecture/
+│   ├── uml/
+│   ├── requirements/
+│   ├── api/
+│   └── ux/
+├── docker-compose.yml
+├── README.md
+└── .github/
+    └── workflows/
+51. Documentación
+README.md
+ARCHITECTURE.md
+DATABASE.md
+API.md
+SECURITY.md
+DEPLOYMENT.md
+CONTRIBUTING.md
+CHANGELOG.md
+
+UML/
+├── use-case.puml
+├── class-diagram.puml
+├── sequence-sale.puml
+├── sequence-cash-close.puml
+├── activity-sale.puml
+└── component-diagram.puml
+52. Evolución futura
+Clientes, pedidos, reservas y tortas personalizadas.
+Delivery.
+Gastos, proveedores, compras y cuentas por pagar.
+Boletas, facturas, notas de crédito y eventual integración con SUNAT.
+Analítica con Power BI.
+Predicción de stock y demanda.
+Recomendaciones de producción.
+Detección de anomalías.
+Modo offline si el negocio lo requiere.
+53. Arquitectura final
+D' KIRAM
+                            │
+                            ▼
+                   ┌─────────────────┐
+                   │ React 19.3      │
+                   │ TypeScript      │
+                   │ Vite            │
+                   │ Tailwind        │
+                   │ shadcn/ui       │
+                   │ PWA             │
+                   └────────┬────────┘
+                            │ HTTPS
+                            ▼
+                   ┌─────────────────┐
+                   │ Spring Boot     │
+                   │ Java 21         │
+                   │ REST            │
+                   │ Security + JWT  │
+                   ├─────────────────┤
+                   │ Auth            │
+                   │ Products        │
+                   │ Categories      │
+                   │ Inventory       │
+                   │ Sales           │
+                   │ Payments        │
+                   │ Cash            │
+                   │ Employees       │
+                   │ Shifts          │
+                   │ Reports         │
+                   │ Audit           │
+                   └────────┬────────┘
+                            │
+                            ▼
+                   ┌─────────────────┐
+                   │ PostgreSQL      │
+                   │ Supabase        │
+                   └────────┬────────┘
+                            │
+                            ▼
+                   ┌─────────────────┐
+                   │ Supabase Storage│
+                   │ Product Images  │
+                   └─────────────────┘
+54. Conclusión técnica
+D' Kiram Pastelería debe construirse como un sistema transaccional de gestión comercial, no como un conjunto de CRUD independientes. La arquitectura separa producto, inventario, venta, pago, caja, movimiento de caja, empleado y turno para preservar integridad y trazabilidad.
+El comportamiento normal de pago será un único método; el pago mixto se soportará como excepción. Solo la parte pagada en efectivo afecta el efectivo físico esperado de la caja.
+La combinación React + TypeScript + PWA + Spring Boot + Java 21 + PostgreSQL/Supabase proporciona una base moderna, mantenible y preparada para crecimiento, evitando sobreingeniería en la primera versión.
+La estrategia recomendada es implementar primero el núcleo transaccional —productos, inventario, ventas, pagos y caja— y posteriormente añadir reportes avanzados, clientes, pedidos, delivery, comprobantes electrónicos y analítica.
+
+Campo | Definición
+Tipo de sistema | Sistema Web/PWA de gestión comercial y POS
+Arquitectura | Monolito modular orientado a dominio
+Frontend | React + TypeScript + Vite + PWA
+Backend | Java 21 + Spring Boot
+Base de datos | PostgreSQL administrado mediante Supabase
+Moneda | Sol peruano (PEN)
+Zona horaria | America/Lima
+Estado | Especificación técnica para implementación
+
+Capa | Tecnologías
+Frontend | React 19.3, TypeScript, Vite
+UI | Tailwind CSS, shadcn/ui
+Estado/API | TanStack Query v5
+Formularios | React Hook Form + Zod
+HTTP | Axios
+PWA | Progressive Web App
+Backend | Java 21 + Spring Boot 4.1.x
+Seguridad | Spring Security + JWT
+Persistencia | Spring Data JPA + Hibernate
+Mapeo | MapStruct
+Validación | Bean Validation
+Migraciones | Flyway
+API | REST + OpenAPI/Swagger
+Base de datos | PostgreSQL + Supabase
+Storage | Supabase Storage
+Testing | JUnit 5, Mockito, Testcontainers, Vitest, React Testing Library
+Infraestructura | Docker + GitHub Actions
+Deploy | Vercel para frontend; Render/Railway/AWS para backend
+
+Código | Requisito | Descripción
+RF-001 | Autenticación | Permitir inicio y cierre de sesión.
+RF-002 | Usuarios | Crear, actualizar, activar y desactivar usuarios.
+RF-003 | Roles | Aplicar permisos según rol.
+RF-004 | Empleados | Gestionar empleados.
+RF-005 | Turnos | Registrar turnos de empleados.
+RF-006 | Categorías | CRUD de categorías.
+RF-007 | Productos | CRUD de productos y gestión de precios, costos, stock e imágenes.
+RF-008 | Inventario | Registrar entradas, salidas, ajustes y mermas.
+RF-009 | Ventas | Registrar ventas con múltiples productos.
+RF-010 | Detalle | Guardar cantidad, precio unitario y subtotal.
+RF-011 | Pagos | Aceptar efectivo, Yape y Plin.
+RF-012 | Pago mixto | Dividir excepcionalmente una venta entre métodos.
+RF-013 | Apertura | Registrar monto inicial, usuario y fecha/hora.
+RF-014 | Caja | Registrar movimientos.
+RF-015 | Cierre | Calcular efectivo esperado y diferencia.
+RF-016 | Historial | Consultar ventas históricas.
+RF-017 | Anulación | Anular ventas según permisos.
+RF-018 | Reportes | Generar indicadores.
+RF-019 | Auditoría | Rastrear operaciones críticas.
+RF-020 | Alertas | Identificar stock bajo.
+
+Código | Requisito | Descripción
+RNF-001 | Seguridad | Proteger autenticación y autorización.
+RNF-002 | Integridad | Operaciones críticas transaccionales.
+RNF-003 | Disponibilidad | Infraestructura cloud.
+RNF-004 | Usabilidad | Flujo de venta optimizado para móvil.
+RNF-005 | Rendimiento | Respuestas rápidas en condiciones normales.
+RNF-006 | Mantenibilidad | Código modular y documentado.
+RNF-007 | Escalabilidad | Crecimiento de módulos y usuarios.
+RNF-008 | Auditoría | Operaciones sensibles trazables.
+RNF-009 | Recuperación | Estrategia de backup.
+RNF-010 | Compatibilidad | Navegadores modernos.
+
+Fase | Nombre | Entregables
+Fase 0 | Análisis y diseño | Requisitos, casos de uso, arquitectura, ER, UML, wireframes, API contract y backlog.
+Fase 1 | Fundación | Spring Boot, React, Supabase, Flyway, Docker, CI/CD y estructura base.
+Fase 2 | Seguridad | Usuarios, roles, permisos, login, JWT y protección de endpoints.
+Fase 3 | Catálogo | Categorías, productos, imágenes, precios, costos y stock inicial.
+Fase 4 | Inventario | Entradas, mermas, ajustes, salidas, historial y stock bajo.
+Fase 5 | Caja | Apertura, movimientos, cierre, arqueo y diferencias.
+Fase 6 | Ventas | Carrito, cantidades, total, confirmación, integración con pago, inventario y caja.
+Fase 7 | Pagos | Efectivo, Yape, Plin y pago mixto.
+Fase 8 | Reportes | Ventas, caja, pagos, inventario, productos y margen.
+Fase 9 | Auditoría | Precio, stock, anulaciones, caja, usuarios y operaciones críticas.
+Fase 10 | Producción | Tests, seguridad, responsive QA, backups y despliegue.
+
+Riesgo | Mitigación
+Concurrencia de stock | Transacciones + control de actualización + validación en backend.
+Errores monetarios | BigDecimal + NUMERIC(12,2).
+Manipulación desde frontend | Spring Security + RBAC + validación backend.
+Pérdida de histórico | Soft delete + auditoría + anulación.
+Inconsistencia venta/stock/caja | @Transactional.
+Zona horaria | UTC en persistencia + America/Lima en presentación.
+Credenciales expuestas | Variables de entorno y secrets del proveedor.

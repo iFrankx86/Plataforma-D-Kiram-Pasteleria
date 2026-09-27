@@ -1,0 +1,172 @@
+import { Category, Product, Employee, EmployeeShift, User } from '../types';
+import { NOTEBOOK_PRODUCTS } from './notebookProducts';
+
+export const INITIAL_USERS: User[] = [
+  {
+    id: 'usr-1',
+    name: 'Frank Lope',
+    email: 'frank.lope@dkiram.pe',
+    role: 'CAJERO',
+    position: 'Vendedor & Cajero',
+  },
+  {
+    id: 'usr-2',
+    name: 'Zaori Sanchez',
+    email: 'zaori.sanchez@dkiram.pe',
+    role: 'CAJERO',
+    position: 'Vendedora & Cajera',
+  },
+  {
+    id: 'usr-3',
+    name: 'Arsencia Osorio',
+    email: 'arsencia.osorio@dkiram.pe',
+    role: 'ADMIN',
+    position: 'Administradora General',
+  },
+  {
+    id: 'usr-4',
+    name: 'Carlos Pomahuacre',
+    email: 'carlos.pomahuacre@dkiram.pe',
+    role: 'INVENTARIO',
+    position: 'Encargado de Inventario & Producción',
+  },
+];
+
+export const INITIAL_CATEGORIES: Category[] = [
+  { id: 'cat-1', name: 'Tortas', description: 'Tortas enteras y porciones de pastelería', active: true },
+  { id: 'cat-2', name: 'Postres', description: 'Postres tradicionales, mil hojas y pies', active: true },
+  { id: 'cat-3', name: 'Pasteles y Queques', description: 'Kekes artesanales, muffins y hojaldres', active: true },
+  { id: 'cat-4', name: 'Bocaditos', description: 'Bocaditos dulces y salados (empanadas, alfajores)', active: true },
+  { id: 'cat-5', name: 'Bebidas', description: 'Gaseosas, aguas, néctares, energizantes y cervezas', active: true },
+  { id: 'cat-6', name: 'Regalos / Extras', description: 'Velas, toppers y accesorios de cumpleaños', active: true },
+];
+
+const notebookItemsAsProducts: Product[] = NOTEBOOK_PRODUCTS.map((item, index) => ({
+  id: `prod-nb-${index + 1}`,
+  sku: item.sku,
+  name: item.name,
+  description: item.description,
+  categoryId: item.categoryId,
+  salePrice: item.salePrice,
+  costPrice: item.costPrice,
+  stockCurrent: item.stockCurrent,
+  stockMinimum: item.stockMinimum,
+  unit: item.unit,
+  image: item.image,
+  active: true,
+  createdAt: '2026-09-01T08:00:00Z',
+}));
+
+export const INITIAL_PRODUCTS: Product[] = [
+  ...notebookItemsAsProducts,
+  {
+    id: 'prod-reg-1',
+    sku: 'REG-VELA-01',
+    name: 'Vela de Cumpleaños Volcán Espumosa',
+    description: 'Vela mágica dorada con chispas seguras para tortas de celebración.',
+    categoryId: 'cat-6',
+    salePrice: 5.00,
+    costPrice: 1.50,
+    stockCurrent: 30,
+    stockMinimum: 10,
+    unit: 'unidad',
+    image: 'https://images.unsplash.com/photo-1530103862676-de8c9debad1d?w=500&auto=format&fit=crop&q=80',
+    active: true,
+    createdAt: '2026-09-01T08:00:00Z',
+  },
+  {
+    id: 'prod-reg-2',
+    sku: 'REG-TOPP-02',
+    name: 'Topper "Feliz Cumpleaños" Acrílico',
+    description: 'Topper elegante dorado brillante para decorar cualquier tarta.',
+    categoryId: 'cat-6',
+    salePrice: 8.00,
+    costPrice: 2.80,
+    stockCurrent: 18,
+    stockMinimum: 5,
+    unit: 'unidad',
+    image: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?w=500&auto=format&fit=crop&q=80',
+    active: true,
+    createdAt: '2026-09-01T08:00:00Z',
+  },
+];
+
+export const INITIAL_EMPLOYEES: Employee[] = [
+  {
+    id: 'emp-1',
+    documentNumber: '76543210',
+    firstName: 'Frank',
+    lastName: 'Lope',
+    phone: '998 765 432',
+    email: 'frank.lope@dkiram.pe',
+    position: 'Vendedor y Cajero',
+    role: 'CAJERO',
+    active: true,
+  },
+  {
+    id: 'emp-2',
+    documentNumber: '74891234',
+    firstName: 'Zaori',
+    lastName: 'Sanchez',
+    phone: '987 123 456',
+    email: 'zaori.sanchez@dkiram.pe',
+    position: 'Vendedora y Cajera',
+    role: 'CAJERO',
+    active: true,
+  },
+  {
+    id: 'emp-3',
+    documentNumber: '41235678',
+    firstName: 'Arsencia',
+    lastName: 'Osorio',
+    phone: '998 112 233',
+    email: 'arsencia.osorio@dkiram.pe',
+    position: 'Administradora de Tienda',
+    role: 'ADMIN',
+    active: true,
+  },
+  {
+    id: 'emp-4',
+    documentNumber: '45678901',
+    firstName: 'Carlos',
+    lastName: 'Pomahuacre',
+    phone: '976 543 210',
+    email: 'carlos.pomahuacre@dkiram.pe',
+    position: 'Encargado de Inventario & Producción',
+    role: 'INVENTARIO',
+    active: true,
+  },
+];
+
+export const INITIAL_SHIFTS: EmployeeShift[] = [
+  {
+    id: 'shf-1',
+    employeeId: 'emp-1',
+    employeeName: 'Frank Lope',
+    date: new Date().toISOString().split('T')[0],
+    startTime: '10:00',
+    endTime: '18:00',
+    status: 'EN_CURSO',
+    notes: 'Apertura de caja a las 10:00 AM y atención en mostrador',
+  },
+  {
+    id: 'shf-2',
+    employeeId: 'emp-2',
+    employeeName: 'Zaori Sanchez',
+    date: new Date().toISOString().split('T')[0],
+    startTime: '14:00',
+    endTime: '22:00',
+    status: 'PROGRAMADO',
+    notes: 'Turno Tarde/Cierre - Atención en vitrina y apoyo en cierre de caja',
+  },
+  {
+    id: 'shf-3',
+    employeeId: 'emp-4',
+    employeeName: 'Carlos Pomahuacre',
+    date: new Date().toISOString().split('T')[0],
+    startTime: '06:30',
+    endTime: '14:30',
+    status: 'EN_CURSO',
+    notes: 'Producción de pasteles, recepción de insumos y control de inventario',
+  },
+];
