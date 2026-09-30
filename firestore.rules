@@ -1,0 +1,97 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global deny-by-default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    // Products collection: Read accessible to store staff/app; Writes validated
+    match /products/{productId} {
+      allow read: if isValidId(productId);
+      allow create, update: if isValidId(productId) 
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+        && request.resource.data.salePrice is number && request.resource.data.salePrice >= 0;
+      allow delete: if isValidId(productId);
+    }
+
+    // Categories
+    match /categories/{categoryId} {
+      allow read: if isValidId(categoryId);
+      allow create, update: if isValidId(categoryId)
+        && request.resource.data.name is string && request.resource.data.name.size() > 0;
+      allow delete: if isValidId(categoryId);
+    }
+
+    // Sales (POS)
+    match /sales/{saleId} {
+      allow read: if isValidId(saleId);
+      allow create: if isValidId(saleId)
+        && request.resource.data.code is string
+        && request.resource.data.total is number && request.resource.data.total >= 0;
+      allow update: if isValidId(saleId)
+        && request.resource.data.status in ['CONFIRMADA', 'ANULADA', 'COMPLETADA'];
+      allow delete: if false; // Sales are audited, never deleted
+    }
+
+    // Cash Registers (Apertura y Cierre de caja)
+    match /cashRegisters/{registerId} {
+      allow read: if isValidId(registerId);
+      allow create, update: if isValidId(registerId)
+        && request.resource.data.code is string
+        && request.resource.data.openingAmount is number;
+      allow delete: if false;
+    }
+
+    // Cash Movements
+    match /cashMovements/{movementId} {
+      allow read: if isValidId(movementId);
+      allow create: if isValidId(movementId)
+        && request.resource.data.amount is number
+        && request.resource.data.type in ['APERTURA', 'INGRESO', 'ABONO_SENCILLO', 'DEVOLUCION_SENCILLO', 'VENTA_EFECTIVO', 'EGRESO', 'RETIRO', 'AJUSTE', 'ANULACION_VENTA'];
+      allow update, delete: if false;
+    }
+
+    // Inventory Movements (Kárdex)
+    match /inventoryMovements/{invId} {
+      allow read: if isValidId(invId);
+      allow create: if isValidId(invId)
+        && request.resource.data.quantity is number
+        && request.resource.data.type in ['ENTRADA', 'SALIDA', 'AJUSTE', 'MERMA'];
+      allow update, delete: if false;
+    }
+
+    // Employees
+    match /employees/{employeeId} {
+      allow read: if isValidId(employeeId);
+      allow create, update: if isValidId(employeeId)
+        && request.resource.data.firstName is string
+        && request.resource.data.role in ['ADMIN', 'CAJERO', 'INVENTARIO'];
+      allow delete: if isValidId(employeeId);
+    }
+
+    // Employee Shifts
+    match /shifts/{shiftId} {
+      allow read: if isValidId(shiftId);
+      allow create, update: if isValidId(shiftId)
+        && request.resource.data.employeeId is string;
+      allow delete: if isValidId(shiftId);
+    }
+
+    // Audit Logs (Inmutable)
+    match /auditLogs/{logId} {
+      allow read: if isValidId(logId);
+      allow create: if isValidId(logId)
+        && request.resource.data.action is string
+        && request.resource.data.entity is string;
+      allow update, delete: if false;
+    }
+  }
+}

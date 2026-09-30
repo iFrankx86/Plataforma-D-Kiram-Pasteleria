@@ -1,0 +1,208 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Producto de pastelería, torta, postre o accesorio",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único del producto" },
+        "name": { "type": "string", "description": "Nombre comercial del producto" },
+        "sku": { "type": "string", "description": "Código SKU único" },
+        "categoryId": { "type": "string", "description": "ID de la categoría asignada" },
+        "categoryName": { "type": "string", "description": "Nombre de la categoría" },
+        "price": { "type": "number", "description": "Precio de venta al público en Soles" },
+        "cost": { "type": "number", "description": "Costo estimado unitario en Soles" },
+        "stock": { "type": "number", "description": "Stock físico actual" },
+        "minStock": { "type": "number", "description": "Alerta de stock mínimo" },
+        "unit": { "type": "string", "description": "Unidad de medida (UND, PORCION, DOCENA, etc.)" },
+        "active": { "type": "boolean", "description": "Estado activo o inactivo" },
+        "description": { "type": "string", "description": "Descripción del producto o ingredientes" },
+        "barcode": { "type": "string", "description": "Código de barras opcional" },
+        "updatedAt": { "type": "string", "description": "Fecha y hora ISO de última actualización" }
+      },
+      "required": ["id", "name", "sku", "categoryId", "categoryName", "price", "stock", "active"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Categoría de productos de pastelería",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID de la categoría" },
+        "name": { "type": "string", "description": "Nombre de la categoría" },
+        "description": { "type": "string", "description": "Descripción general" },
+        "active": { "type": "boolean", "description": "Estado activo" }
+      },
+      "required": ["id", "name", "active"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Venta registrada en el POS",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID único de la venta" },
+        "code": { "type": "string", "description": "Código correlativo de venta (ej. V-100001)" },
+        "subtotal": { "type": "number", "description": "Subtotal de la venta" },
+        "discount": { "type": "number", "description": "Descuento aplicado en Soles" },
+        "total": { "type": "number", "description": "Total cobrado al cliente" },
+        "paymentMethod": { "type": "string", "description": "Método de pago (EFECTIVO, YAPE, PLIN, TARJETA, MIXTO)" },
+        "paymentDetails": { "type": "string", "description": "Detalle de pagos combinados en formato JSON" },
+        "cashReceived": { "type": "number", "description": "Monto en efectivo recibido" },
+        "changeGiven": { "type": "number", "description": "Vuelto entregado al cliente" },
+        "customerName": { "type": "string", "description": "Nombre del cliente o Cliente Mostrador" },
+        "customerDocument": { "type": "string", "description": "DNI o RUC del cliente" },
+        "employeeId": { "type": "string", "description": "ID del cajero/vendedor" },
+        "employeeName": { "type": "string", "description": "Nombre del cajero" },
+        "cashRegisterId": { "type": "string", "description": "ID de la caja en la que se vendió" },
+        "status": { "type": "string", "description": "Estado: COMPLETADA o ANULADA" },
+        "cancellationReason": { "type": "string", "description": "Motivo de anulación si aplica" },
+        "cancelledAt": { "type": "string", "description": "Fecha de anulación" },
+        "cancelledBy": { "type": "string", "description": "Usuario que anuló" },
+        "items": { "type": "string", "description": "Items de la venta serializados" },
+        "createdAt": { "type": "string", "description": "Fecha y hora ISO de creación" }
+      },
+      "required": ["id", "code", "total", "paymentMethod", "employeeName", "cashRegisterId", "status", "createdAt"]
+    },
+    "CashRegister": {
+      "title": "CashRegister",
+      "description": "Sesión de caja y arqueo de turno",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID de la sesión de caja" },
+        "code": { "type": "string", "description": "Código de la sesión (ej. CAJA-2026-001)" },
+        "employeeId": { "type": "string", "description": "ID del cajero que aperturó" },
+        "employeeName": { "type": "string", "description": "Nombre del cajero responsable" },
+        "openedAt": { "type": "string", "description": "Fecha y hora ISO de apertura" },
+        "closedAt": { "type": "string", "description": "Fecha y hora ISO de cierre" },
+        "openingAmount": { "type": "number", "description": "Fondo inicial de cambio en Soles" },
+        "closingAmount": { "type": "number", "description": "Total contado en el arqueo de cierre" },
+        "expectedCash": { "type": "number", "description": "Efectivo esperado por el sistema" },
+        "difference": { "type": "number", "description": "Diferencia (sobrante o faltante)" },
+        "status": { "type": "string", "description": "ABIERTA o CERRADA" },
+        "notes": { "type": "string", "description": "Observaciones de cierre" }
+      },
+      "required": ["id", "code", "employeeName", "openedAt", "openingAmount", "status"]
+    },
+    "CashMovement": {
+      "title": "CashMovement",
+      "description": "Movimiento manual o automático de caja (ingreso / egreso)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID del movimiento" },
+        "cashRegisterId": { "type": "string", "description": "ID de la sesión de caja asociada" },
+        "type": { "type": "string", "description": "APERTURA, INGRESO o EGRESO" },
+        "amount": { "type": "number", "description": "Monto en Soles" },
+        "reason": { "type": "string", "description": "Justificación del movimiento" },
+        "createdBy": { "type": "string", "description": "Usuario que registró el movimiento" },
+        "createdAt": { "type": "string", "description": "Fecha y hora ISO de creación" }
+      },
+      "required": ["id", "cashRegisterId", "type", "amount", "reason", "createdBy", "createdAt"]
+    },
+    "InventoryMovement": {
+      "title": "InventoryMovement",
+      "description": "Kárdex y movimiento de existencias de productos",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID del movimiento de inventario" },
+        "productId": { "type": "string", "description": "ID del producto afectado" },
+        "productName": { "type": "string", "description": "Nombre del producto" },
+        "type": { "type": "string", "description": "ENTRADA, SALIDA, AJUSTE o MERMA" },
+        "quantity": { "type": "number", "description": "Cantidad de unidades" },
+        "stockBefore": { "type": "number", "description": "Stock previo" },
+        "stockAfter": { "type": "number", "description": "Stock resultante" },
+        "reason": { "type": "string", "description": "Motivo del ajuste o lote" },
+        "referenceType": { "type": "string", "description": "VENTA, ANULACION, PRODUCCION o MANUAL" },
+        "referenceId": { "type": "string", "description": "ID de venta o lote de producción si aplica" },
+        "createdBy": { "type": "string", "description": "Usuario que registró el movimiento" },
+        "createdAt": { "type": "string", "description": "Fecha y hora ISO" }
+      },
+      "required": ["id", "productId", "productName", "type", "quantity", "stockBefore", "stockAfter", "createdBy", "createdAt"]
+    },
+    "Employee": {
+      "title": "Employee",
+      "description": "Colaborador de D'Kiram Pastelería",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID único de empleado" },
+        "documentNumber": { "type": "string", "description": "DNI del colaborador" },
+        "firstName": { "type": "string", "description": "Nombres" },
+        "lastName": { "type": "string", "description": "Apellidos" },
+        "phone": { "type": "string", "description": "Número de teléfono celular" },
+        "email": { "type": "string", "description": "Correo electrónico corporativo" },
+        "position": { "type": "string", "description": "Cargo formal" },
+        "role": { "type": "string", "description": "Rol: ADMIN, CAJERO o INVENTARIO" },
+        "active": { "type": "boolean", "description": "Estado activo o inactivo" }
+      },
+      "required": ["id", "firstName", "lastName", "role", "active"]
+    },
+    "EmployeeShift": {
+      "title": "EmployeeShift",
+      "description": "Turno programado o cumplido de colaborador",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID del turno" },
+        "employeeId": { "type": "string", "description": "ID del colaborador" },
+        "employeeName": { "type": "string", "description": "Nombre completo del colaborador" },
+        "date": { "type": "string", "description": "Fecha del turno YYYY-MM-DD" },
+        "startTime": { "type": "string", "description": "Hora de inicio HH:MM" },
+        "endTime": { "type": "string", "description": "Hora de fin HH:MM" },
+        "status": { "type": "string", "description": "PROGRAMADO, EN_CURSO, COMPLETADO, AUSENTE" },
+        "notes": { "type": "string", "description": "Observaciones del turno" }
+      },
+      "required": ["id", "employeeId", "employeeName", "date", "startTime", "endTime", "status"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Registro de auditoría inmutable de acciones en el sistema",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID del log de auditoría" },
+        "userId": { "type": "string", "description": "ID del usuario que ejecutó la acción" },
+        "userName": { "type": "string", "description": "Nombre del usuario" },
+        "action": { "type": "string", "description": "Acción ejecutada (ej. VENTA_REGISTRADA, APERTURA_CAJA)" },
+        "entity": { "type": "string", "description": "Entidad afectada (SALE, CASH_REGISTER, PRODUCT, etc.)" },
+        "entityId": { "type": "string", "description": "ID de la entidad afectada" },
+        "details": { "type": "string", "description": "Descripción detallada del evento" },
+        "createdAt": { "type": "string", "description": "Fecha y hora ISO de registro" }
+      },
+      "required": ["id", "userName", "action", "entity", "details", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Colección de productos y precios de pastelería"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Colección de categorías de productos"
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Colección de ventas e historial de comprobantes"
+    },
+    "/cashRegisters/{cashRegisterId}": {
+      "schema": "CashRegister",
+      "description": "Sesiones y arqueos de caja"
+    },
+    "/cashMovements/{movementId}": {
+      "schema": "CashMovement",
+      "description": "Movimientos de efectivo en caja"
+    },
+    "/inventoryMovements/{movementId}": {
+      "schema": "InventoryMovement",
+      "description": "Kárdex y trazabilidad de inventario"
+    },
+    "/employees/{employeeId}": {
+      "schema": "Employee",
+      "description": "Lista de colaboradores y cargos"
+    },
+    "/shifts/{shiftId}": {
+      "schema": "EmployeeShift",
+      "description": "Horarios y turnos de trabajo"
+    },
+    "/auditLogs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Trazabilidad y auditoría de eventos del sistema"
+    }
+  }
+}

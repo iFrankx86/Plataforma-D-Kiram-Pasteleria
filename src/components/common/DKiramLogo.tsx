@@ -33,7 +33,7 @@ export const DKiramLogo: React.FC<DKiramLogoProps> = ({
             {withContour && (
               <>
                 <feMorphology in="SourceAlpha" result="EXPANDED" operator="dilate" radius="2.5" />
-                <feFlood flood-color="#FFF8EE" flood-opacity="0.95" result="COLOR" />
+                <feFlood floodColor="#FFF8EE" floodOpacity="0.95" result="COLOR" />
                 <feComposite in="COLOR" in2="EXPANDED" operator="in" result="CONTOUR" />
                 <feMerge>
                   <feMergeNode in="CONTOUR" />

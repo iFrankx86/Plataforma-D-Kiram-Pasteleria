@@ -22,6 +22,27 @@ import {
   INITIAL_SHIFTS 
 } from '../data/mockData';
 import { NOTEBOOK_PRODUCTS } from '../data/notebookProducts';
+import {
+  subscribeToProducts,
+  subscribeToCategories,
+  subscribeToSales,
+  subscribeToCashRegisters,
+  subscribeToCashMovements,
+  subscribeToInventoryMovements,
+  subscribeToEmployees,
+  subscribeToShifts,
+  subscribeToAuditLogs,
+  saveProductToFirestore,
+  deleteProductFromFirestore,
+  saveSaleToFirestore,
+  saveCashRegisterToFirestore,
+  saveCashMovementToFirestore,
+  saveInventoryMovementToFirestore,
+  saveEmployeeToFirestore,
+  deleteEmployeeFromFirestore,
+  saveShiftToFirestore,
+  saveAuditLogToFirestore
+} from '../firebase/firestoreService';
 
 interface CartItem {
   product: Product;
@@ -387,6 +408,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs));
   }, [auditLogs]);
 
+  // Real-time Firestore Sync
+  useEffect(() => {
+    let unsubProducts: (() => void) | undefined;
+    let unsubCategories: (() => void) | undefined;
+    let unsubSales: (() => void) | undefined;
+    let unsubRegisters: (() => void) | undefined;
+    let unsubMovements: (() => void) | undefined;
+    let unsubInvMovements: (() => void) | undefined;
+    let unsubEmployees: (() => void) | undefined;
+    let unsubShifts: (() => void) | undefined;
+    let unsubLogs: (() => void) | undefined;
+
+    try {
+      unsubProducts = subscribeToProducts((prods) => {
+        if (prods && prods.length > 0) setProducts(prods);
+      });
+      unsubCategories = subscribeToCategories((cats) => {
+        if (cats && cats.length > 0) setCategories(cats);
+      });
+      unsubSales = subscribeToSales((s) => {
+        if (s && s.length > 0) setSales(s);
+      });
+      unsubRegisters = subscribeToCashRegisters((regs) => {
+        if (regs && regs.length > 0) setCashRegisters(regs);
+      });
+      unsubMovements = subscribeToCashMovements((movs) => {
+        if (movs && movs.length > 0) setCashMovements(movs);
+      });
+      unsubInvMovements = subscribeToInventoryMovements((invs) => {
+        if (invs && invs.length > 0) setInventoryMovements(invs);
+      });
+      unsubEmployees = subscribeToEmployees((emps) => {
+        if (emps && emps.length > 0) setEmployees(emps);
+      });
+      unsubShifts = subscribeToShifts((shfs) => {
+        if (shfs && shfs.length > 0) setShifts(shfs);
+      });
+      unsubLogs = subscribeToAuditLogs((logs) => {
+        if (logs && logs.length > 0) setAuditLogs(logs);
+      });
+    } catch (err) {
+      console.warn("Error setting up Firestore subscriptions:", err);
+    }
+
+    return () => {
+      unsubProducts?.();
+      unsubCategories?.();
+      unsubSales?.();
+      unsubRegisters?.();
+      unsubMovements?.();
+      unsubInvMovements?.();
+      unsubEmployees?.();
+      unsubShifts?.();
+      unsubLogs?.();
+    };
+  }, []);
+
   // Derived active cash register
   const currentCashRegister = cashRegisters.find(cr => cr.status === 'ABIERTA') || null;
 
@@ -403,6 +481,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
     };
     setAuditLogs(prev => [newLog, ...prev]);
+    saveAuditLogToFirestore(newLog).catch(console.warn);
   };
 
   // Cart operations
@@ -494,6 +573,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setCashRegisters(prev => [newRegister, ...prev]);
     setCashMovements(prev => [initialMovement, ...prev]);
+    saveCashRegisterToFirestore(newRegister).catch(console.warn);
+    saveCashMovementToFirestore(initialMovement).catch(console.warn);
     addAuditLog('APERTURA_CAJA', 'CASH_REGISTER', newRegister.id, `Monto inicial: S/ ${openingAmount.toFixed(2)} por ${currentUser.name}`);
 
     return { success: true };
@@ -515,6 +596,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? closedRegister : cr));
+    saveCashRegisterToFirestore(closedRegister).catch(console.warn);
     addAuditLog(
       'CIERRE_CAJA', 
       'CASH_REGISTER', 
@@ -556,9 +638,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     else if (type === 'AJUSTE') delta = amount;
 
     const updatedExpected = Math.max(0, currentCashRegister.expectedCash + delta);
+    const updatedRegister = { ...currentCashRegister, expectedCash: Number(updatedExpected.toFixed(2)) };
 
     setCashMovements(prev => [newMovement, ...prev]);
-    setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? { ...cr, expectedCash: Number(updatedExpected.toFixed(2)) } : cr));
+    setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? updatedRegister : cr));
+    saveCashMovementToFirestore(newMovement).catch(console.warn);
+    saveCashRegisterToFirestore(updatedRegister).catch(console.warn);
     addAuditLog('MOVIMIENTO_CAJA', 'CASH_MOVEMENT', newMovement.id, `${type}: S/ ${amount.toFixed(2)} - ${reason}`);
 
     return { success: true };
@@ -684,12 +769,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Only cash increases physical expected cash in register!
       const newExpectedCash = currentCashRegister.expectedCash + cashPortion;
-      setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? { ...cr, expectedCash: Number(newExpectedCash.toFixed(2)) } : cr));
+      const updatedRegister = { ...currentCashRegister, expectedCash: Number(newExpectedCash.toFixed(2)) };
+      setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? updatedRegister : cr));
+      saveCashMovementToFirestore(cashMove).catch(console.warn);
+      saveCashRegisterToFirestore(updatedRegister).catch(console.warn);
     }
 
     setProducts(updatedProducts);
     setInventoryMovements(prev => [...newInventoryMovements, ...prev]);
     setSales(prev => [newSale, ...prev]);
+
+    // Async persist to Firestore
+    saveSaleToFirestore(newSale).catch(console.warn);
+    for (const inv of newInventoryMovements) {
+      saveInventoryMovementToFirestore(inv).catch(console.warn);
+    }
+    for (const p of updatedProducts) {
+      if (cart.some(ci => ci.product.id === p.id)) {
+        saveProductToFirestore(p).catch(console.warn);
+      }
+    }
+
     addAuditLog('REGISTRAR_VENTA', 'SALE', saleId, `Venta ${saleCode} por S/ ${cartTotal.toFixed(2)} - Pagos: ${params.payments.map(p => `${p.method}: S/ ${p.amount.toFixed(2)}`).join(', ')}`);
 
     // Reset Cart
@@ -749,7 +849,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       setCashMovements(prev => [cashReversal, ...prev]);
       const newExpectedCash = Math.max(0, currentCashRegister.expectedCash - cashPortion);
-      setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? { ...cr, expectedCash: Number(newExpectedCash.toFixed(2)) } : cr));
+      const updatedRegister = { ...currentCashRegister, expectedCash: Number(newExpectedCash.toFixed(2)) };
+      setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? updatedRegister : cr));
+      saveCashMovementToFirestore(cashReversal).catch(console.warn);
+      saveCashRegisterToFirestore(updatedRegister).catch(console.warn);
     }
 
     const updatedSale: Sale = {
@@ -762,6 +865,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProducts(updatedProducts);
     setInventoryMovements(prev => [...newInvMoves, ...prev]);
     setSales(prev => prev.map(s => s.id === saleId ? updatedSale : s));
+
+    // Async persist to Firestore
+    saveSaleToFirestore(updatedSale).catch(console.warn);
+    for (const inv of newInvMoves) {
+      saveInventoryMovementToFirestore(inv).catch(console.warn);
+    }
+    for (const p of updatedProducts) {
+      if (saleToVoid.items.some(i => i.productId === p.id)) {
+        saveProductToFirestore(p).catch(console.warn);
+      }
+    }
+
     addAuditLog('ANULAR_VENTA', 'SALE', saleId, `Anulada venta ${saleToVoid.code} por ${currentUser.name}. Motivo: ${reason}`);
 
     return { success: true };
@@ -803,8 +918,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
     };
 
-    setProducts(prev => prev.map(p => p.id === product.id ? { ...p, stockCurrent: newStock } : p));
+    const updatedProduct = { ...product, stockCurrent: newStock };
+    setProducts(prev => prev.map(p => p.id === product.id ? updatedProduct : p));
     setInventoryMovements(prev => [movement, ...prev]);
+    saveProductToFirestore(updatedProduct).catch(console.warn);
+    saveInventoryMovementToFirestore(movement).catch(console.warn);
     addAuditLog('AJUSTE_INVENTARIO', 'PRODUCT', product.id, `${params.type} de ${product.name}: Stock ${product.stockCurrent} -> ${newStock} (${params.reason})`);
 
     return { success: true };
@@ -858,6 +976,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setProducts(prev => [newProduct, ...prev]);
+    saveProductToFirestore(newProduct).catch(console.warn);
     addAuditLog(
       'CREAR_PRODUCTO',
       'PRODUCT',
@@ -885,7 +1004,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: check.reason };
     }
 
-    setProducts(prev => prev.map(p => (p.id === id ? { ...p, ...updates } : p)));
+    const updated = { ...oldProduct, ...updates };
+    setProducts(prev => prev.map(p => (p.id === id ? updated : p)));
+    saveProductToFirestore(updated).catch(console.warn);
     addAuditLog(
       'EDITAR_PRODUCTO',
       'PRODUCT',
@@ -907,6 +1028,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Remove from products
     setProducts(prev => prev.filter(p => p.id !== id));
+    deleteProductFromFirestore(id).catch(console.warn);
 
     addAuditLog(
       'ELIMINAR_PRODUCTO',
@@ -964,6 +1086,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (toAdd.length > 0) {
       setProducts(prev => [...toAdd, ...prev]);
+      for (const prod of toAdd) {
+        saveProductToFirestore(prod).catch(console.warn);
+      }
       addAuditLog(
         'IMPORTAR_PRODUCTOS',
         'PRODUCT',
@@ -982,11 +1107,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `emp-${Date.now()}`,
     };
     setEmployees(prev => [...prev, newEmp]);
+    saveEmployeeToFirestore(newEmp).catch(console.warn);
     addAuditLog('CREAR_EMPLEADO', 'EMPLOYEE', newEmp.id, `Registrado empleado: ${newEmp.firstName} ${newEmp.lastName} (${newEmp.position})`);
   };
 
   const updateEmployee = (id: string, updates: Partial<Employee>) => {
-    setEmployees(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
+    const emp = employees.find(e => e.id === id);
+    if (emp) {
+      const updatedEmp = { ...emp, ...updates };
+      setEmployees(prev => prev.map(e => e.id === id ? updatedEmp : e));
+      saveEmployeeToFirestore(updatedEmp).catch(console.warn);
+    }
   };
 
   const addShift = (shiftData: Omit<EmployeeShift, 'id'>) => {
@@ -995,11 +1126,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `shf-${Date.now()}`,
     };
     setShifts(prev => [newShift, ...prev]);
+    saveShiftToFirestore(newShift).catch(console.warn);
     addAuditLog('CREAR_TURNO', 'SHIFT', newShift.id, `Turno para ${newShift.employeeName} (${newShift.date} ${newShift.startTime}-${newShift.endTime})`);
   };
 
   const updateShiftStatus = (id: string, status: 'PROGRAMADO' | 'EN_CURSO' | 'COMPLETADO') => {
-    setShifts(prev => prev.map(s => s.id === id ? { ...s, status } : s));
+    const shf = shifts.find(s => s.id === id);
+    if (shf) {
+      const updatedShf = { ...shf, status };
+      setShifts(prev => prev.map(s => s.id === id ? updatedShf : s));
+      saveShiftToFirestore(updatedShf).catch(console.warn);
+    }
   };
 
   return (
