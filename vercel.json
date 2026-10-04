@@ -1,8 +1,27 @@
 {
   "framework": "vite",
+  "headers": [
+    {
+      "source": "/INFORME_TECNICO_DKIRAM_PASTELERIA.docx",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        },
+        {
+          "key": "Content-Disposition",
+          "value": "attachment; filename=\"INFORME_TECNICO_DKIRAM_PASTELERIA.docx\""
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!.*\\.(?:docx|png|jpg|jpeg|gif|svg|ico|json|css|js|txt)$).*)",
       "destination": "/index.html"
     }
   ]

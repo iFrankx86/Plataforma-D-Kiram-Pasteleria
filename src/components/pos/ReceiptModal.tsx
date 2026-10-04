@@ -1,6 +1,7 @@
 import React from 'react';
 import { Sale } from '../../types';
-import { Printer, X, CheckCircle, Sparkles } from 'lucide-react';
+import { useApp } from '../../context/AppContext';
+import { Printer, X, CheckCircle, Sparkles, WifiOff, Cloud } from 'lucide-react';
 import { DKiramLogo } from '../common/DKiramLogo';
 
 interface ReceiptModalProps {
@@ -9,6 +10,9 @@ interface ReceiptModalProps {
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
+  const { syncQueue } = useApp();
+  const isPendingSync = syncQueue.some(q => q.type === 'SALE' && q.data.sale?.id === sale.id);
+
   const handlePrint = () => {
     window.print();
   };
@@ -128,6 +132,21 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
               ¡Gracias por endulzar tu día con D' Kiram!
             </p>
             <p>Conserve este ticket para cualquier cambio o consulta.</p>
+
+            {/* Offline vs Online Sync Pill */}
+            <div className="pt-2 print:hidden">
+              {isPendingSync ? (
+                <div className="text-[10px] text-amber-800 bg-amber-100/90 border border-amber-300 px-2 py-1 rounded-lg flex items-center justify-center gap-1.5 font-sans font-medium">
+                  <WifiOff className="w-3 h-3 text-amber-600 shrink-0" />
+                  <span>Modo Offline: Venta guardada localmente (pendiente de subir)</span>
+                </div>
+              ) : (
+                <div className="text-[10px] text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2 py-1 rounded-lg flex items-center justify-center gap-1.5 font-sans font-medium">
+                  <Cloud className="w-3 h-3 text-emerald-600 shrink-0" />
+                  <span>Sincronizada con Google Firestore</span>
+                </div>
+              )}
+            </div>
           </div>
 
         </div>

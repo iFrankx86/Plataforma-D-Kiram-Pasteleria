@@ -505,7 +505,7 @@ export const POSScreen: React.FC<POSScreenProps> = ({ onGoToCash }) => {
                           e.stopPropagation();
                           if (!isOutOfStock) handleAddToCart(product);
                         }}
-                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition shadow-xs ${
+                        className={`w-9 h-9 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition shadow-xs active:scale-90 ${
                           isOutOfStock
                             ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
                             : 'bg-amber-100 hover:bg-amber-600 text-amber-900 hover:text-white'
@@ -585,8 +585,8 @@ export const POSScreen: React.FC<POSScreenProps> = ({ onGoToCash }) => {
       {/* FLOATING ACTION BAR ON MOBILE (WHEN CART HAS ITEMS)          */}
       {/* ============================================================ */}
       {cart.length > 0 && (
-        <div className="lg:hidden fixed bottom-4 left-3 right-3 z-40 animate-in slide-in-from-bottom-4 duration-200">
-          <div className="bg-stone-900 text-white p-3 rounded-2xl shadow-2xl border border-stone-700 flex items-center justify-between gap-3">
+        <div className="lg:hidden fixed bottom-[68px] sm:bottom-[72px] left-3 right-3 z-30 animate-in slide-in-from-bottom-4 duration-200">
+          <div className="bg-stone-900/95 backdrop-blur-md text-white p-3 rounded-2xl shadow-2xl border border-stone-750 flex items-center justify-between gap-3">
             <div 
               onClick={() => setIsCartDrawerOpen(true)}
               className="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0"

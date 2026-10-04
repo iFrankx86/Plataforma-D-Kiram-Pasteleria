@@ -47,7 +47,7 @@ export function subscribeToProducts(onData: (products: Product[]) => void) {
       onData(items);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, collectionPath);
+      handleFirestoreError(error, OperationType.LIST, collectionPath);
     }
   );
 }
@@ -68,7 +68,7 @@ export function subscribeToCategories(onData: (categories: Category[]) => void) 
       onData(items);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, collectionPath);
+      handleFirestoreError(error, OperationType.LIST, collectionPath);
     }
   );
 }
@@ -87,7 +87,7 @@ export function subscribeToSales(onData: (sales: Sale[]) => void) {
       onData(items);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, collectionPath);
+      handleFirestoreError(error, OperationType.LIST, collectionPath);
     }
   );
 }
@@ -105,7 +105,7 @@ export function subscribeToCashRegisters(onData: (registers: CashRegister[]) => 
       onData(items);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, collectionPath);
+      handleFirestoreError(error, OperationType.LIST, collectionPath);
     }
   );
 }
@@ -123,7 +123,7 @@ export function subscribeToCashMovements(onData: (movements: CashMovement[]) => 
       onData(items);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, collectionPath);
+      handleFirestoreError(error, OperationType.LIST, collectionPath);
     }
   );
 }
@@ -141,7 +141,7 @@ export function subscribeToInventoryMovements(onData: (movements: InventoryMovem
       onData(items);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, collectionPath);
+      handleFirestoreError(error, OperationType.LIST, collectionPath);
     }
   );
 }
@@ -162,7 +162,7 @@ export function subscribeToEmployees(onData: (employees: Employee[]) => void) {
       onData(items);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, collectionPath);
+      handleFirestoreError(error, OperationType.LIST, collectionPath);
     }
   );
 }
@@ -184,7 +184,7 @@ export function subscribeToShifts(onData: (shifts: EmployeeShift[]) => void) {
       onData(items);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, collectionPath);
+      handleFirestoreError(error, OperationType.LIST, collectionPath);
     }
   );
 }
@@ -202,16 +202,38 @@ export function subscribeToAuditLogs(onData: (logs: AuditLog[]) => void) {
       onData(items);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, collectionPath);
+      handleFirestoreError(error, OperationType.LIST, collectionPath);
     }
   );
+}
+
+/**
+ * Recursively strips undefined values from an object before sending to Firestore
+ * to prevent: "Function setDoc() called with invalid data. Unsupported field value: undefined"
+ */
+export function removeUndefinedFields<T>(obj: T): T {
+  if (obj === null || obj === undefined || typeof obj !== 'object') {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => removeUndefinedFields(item)) as unknown as T;
+  }
+
+  const cleaned: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      cleaned[key] = removeUndefinedFields(value);
+    }
+  }
+  return cleaned as T;
 }
 
 // Writers
 export async function saveProductToFirestore(product: Product): Promise<void> {
   const path = `products/${product.id}`;
   try {
-    await setDoc(doc(db, 'products', product.id), product);
+    await setDoc(doc(db, 'products', product.id), removeUndefinedFields(product));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -229,7 +251,7 @@ export async function deleteProductFromFirestore(productId: string): Promise<voi
 export async function saveSaleToFirestore(sale: Sale): Promise<void> {
   const path = `sales/${sale.id}`;
   try {
-    await setDoc(doc(db, 'sales', sale.id), sale);
+    await setDoc(doc(db, 'sales', sale.id), removeUndefinedFields(sale));
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
   }
@@ -238,7 +260,7 @@ export async function saveSaleToFirestore(sale: Sale): Promise<void> {
 export async function saveCashRegisterToFirestore(register: CashRegister): Promise<void> {
   const path = `cashRegisters/${register.id}`;
   try {
-    await setDoc(doc(db, 'cashRegisters', register.id), register);
+    await setDoc(doc(db, 'cashRegisters', register.id), removeUndefinedFields(register));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -247,7 +269,7 @@ export async function saveCashRegisterToFirestore(register: CashRegister): Promi
 export async function saveCashMovementToFirestore(movement: CashMovement): Promise<void> {
   const path = `cashMovements/${movement.id}`;
   try {
-    await setDoc(doc(db, 'cashMovements', movement.id), movement);
+    await setDoc(doc(db, 'cashMovements', movement.id), removeUndefinedFields(movement));
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
   }
@@ -256,7 +278,7 @@ export async function saveCashMovementToFirestore(movement: CashMovement): Promi
 export async function saveInventoryMovementToFirestore(movement: InventoryMovement): Promise<void> {
   const path = `inventoryMovements/${movement.id}`;
   try {
-    await setDoc(doc(db, 'inventoryMovements', movement.id), movement);
+    await setDoc(doc(db, 'inventoryMovements', movement.id), removeUndefinedFields(movement));
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
   }
@@ -265,7 +287,7 @@ export async function saveInventoryMovementToFirestore(movement: InventoryMoveme
 export async function saveEmployeeToFirestore(employee: Employee): Promise<void> {
   const path = `employees/${employee.id}`;
   try {
-    await setDoc(doc(db, 'employees', employee.id), employee);
+    await setDoc(doc(db, 'employees', employee.id), removeUndefinedFields(employee));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -274,7 +296,7 @@ export async function saveEmployeeToFirestore(employee: Employee): Promise<void>
 export async function saveShiftToFirestore(shift: EmployeeShift): Promise<void> {
   const path = `shifts/${shift.id}`;
   try {
-    await setDoc(doc(db, 'shifts', shift.id), shift);
+    await setDoc(doc(db, 'shifts', shift.id), removeUndefinedFields(shift));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -301,7 +323,7 @@ export async function deleteShiftFromFirestore(shiftId: string): Promise<void> {
 export async function saveAuditLogToFirestore(log: AuditLog): Promise<void> {
   const path = `auditLogs/${log.id}`;
   try {
-    await setDoc(doc(db, 'auditLogs', log.id), log);
+    await setDoc(doc(db, 'auditLogs', log.id), removeUndefinedFields(log));
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
   }

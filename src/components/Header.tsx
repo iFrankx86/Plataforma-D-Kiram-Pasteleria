@@ -1,12 +1,77 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { Store, UserCircle2, Clock, CheckCircle2, AlertCircle, ChevronDown } from 'lucide-react';
+import { 
+  Store, 
+  UserCircle2, 
+  Clock, 
+  CheckCircle2, 
+  AlertCircle, 
+  ChevronDown, 
+  FileText, 
+  Loader2,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  Cloud
+} from 'lucide-react';
 import { DKiramLogo } from './common/DKiramLogo';
+import { SyncStatusModal } from './common/SyncStatusModal';
 
 export const Header: React.FC = () => {
-  const { currentUser, setCurrentUser, users, currentCashRegister } = useApp();
+  const { 
+    currentUser, 
+    setCurrentUser, 
+    users, 
+    currentCashRegister,
+    isOnline,
+    syncQueue,
+    isSyncing,
+    syncPendingTransactions
+  } = useApp();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Robust client-side Blob downloader to guarantee .docx extension on mobile and desktop
+  const handleDownloadWordDoc = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (isDownloading) return;
+    setIsDownloading(true);
+
+    try {
+      const response = await fetch('/INFORME_TECNICO_DKIRAM_PASTELERIA.docx');
+      if (!response.ok) {
+        throw new Error(`Error en servidor: ${response.status}`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      
+      // Explicit MIME type for Microsoft Word OpenXML Document
+      const docxBlob = new Blob([arrayBuffer], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      });
+      
+      const blobUrl = window.URL.createObjectURL(docxBlob);
+      const downloadLink = document.createElement('a');
+      downloadLink.style.display = 'none';
+      downloadLink.href = blobUrl;
+      downloadLink.download = 'INFORME_TECNICO_DKIRAM_PASTELERIA.docx';
+      
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      
+      setTimeout(() => {
+        document.body.removeChild(downloadLink);
+        window.URL.revokeObjectURL(blobUrl);
+        setIsDownloading(false);
+      }, 1200);
+    } catch (err) {
+      console.error('Error al descargar el archivo Word:', err);
+      // Fallback
+      window.location.href = '/INFORME_TECNICO_DKIRAM_PASTELERIA.docx';
+      setIsDownloading(false);
+    }
+  };
 
   // Close menu on outside click
   useEffect(() => {
@@ -31,6 +96,62 @@ export const Header: React.FC = () => {
         {/* Status Pills & User Switcher */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           
+          {/* Download Word Technical Report */}
+          <button
+            type="button"
+            onClick={handleDownloadWordDoc}
+            disabled={isDownloading}
+            className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg bg-amber-500/15 hover:bg-amber-500/25 active:scale-95 text-amber-300 border border-amber-500/30 transition-all hover:scale-[1.02] disabled:opacity-50"
+            title="Descargar Informe Técnico oficial en formato Microsoft Word (.docx)"
+          >
+            {isDownloading ? (
+              <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+            ) : (
+              <FileText className="w-3.5 h-3.5 text-amber-400" />
+            )}
+            <span className="hidden sm:inline">
+              {isDownloading ? 'Generando .docx...' : 'Informe Word (.docx)'}
+            </span>
+          </button>
+
+          {/* Cloud Sync & Connectivity Pill */}
+          <button
+            type="button"
+            onClick={() => setIsSyncModalOpen(true)}
+            className={`cursor-pointer flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full transition-all active:scale-95 ${
+              !isOnline
+                ? 'bg-amber-950/90 text-amber-300 border border-amber-500/60 animate-pulse'
+                : isSyncing
+                ? 'bg-sky-950/90 text-sky-300 border border-sky-500/60'
+                : syncQueue.length > 0
+                ? 'bg-amber-950/80 text-amber-300 border border-amber-500/50'
+                : 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-900/60'
+            }`}
+            title="Ver estado de conexión y sincronización con Firestore"
+          >
+            {!isOnline ? (
+              <>
+                <WifiOff className="w-3.5 h-3.5 text-amber-400" />
+                <span>Offline {syncQueue.length > 0 ? `(${syncQueue.length})` : ''}</span>
+              </>
+            ) : isSyncing ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 text-sky-400 animate-spin" />
+                <span>Sincronizando...</span>
+              </>
+            ) : syncQueue.length > 0 ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+                <span>{syncQueue.length} pendiente{syncQueue.length > 1 ? 's' : ''}</span>
+              </>
+            ) : (
+              <>
+                <Wifi className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden md:inline">En Línea</span>
+              </>
+            )}
+          </button>
+
           {/* Cash Status Pill */}
           <div className="flex items-center">
             {currentCashRegister ? (
@@ -112,6 +233,12 @@ export const Header: React.FC = () => {
         </div>
 
       </div>
+
+      {/* Sync Status Details Modal */}
+      <SyncStatusModal 
+        isOpen={isSyncModalOpen} 
+        onClose={() => setIsSyncModalOpen(false)} 
+      />
     </header>
   );
 };

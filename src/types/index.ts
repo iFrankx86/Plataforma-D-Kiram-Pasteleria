@@ -168,3 +168,23 @@ export interface AuditLog {
   details: string;
   createdAt: string;
 }
+
+export type SyncStatus = 'ONLINE_SYNCED' | 'OFFLINE' | 'SYNCING' | 'ERROR';
+
+export interface PendingSyncItem {
+  id: string; // queue item ID (e.g. sync-sale-...)
+  type: 'SALE' | 'VOID_SALE' | 'CASH_REGISTER' | 'CASH_MOVEMENT' | 'INVENTORY_ADJUSTMENT';
+  timestamp: string;
+  data: {
+    sale?: Sale;
+    inventoryMovements?: InventoryMovement[];
+    updatedProducts?: { id: string; stockCurrent: number }[];
+    cashMovement?: CashMovement;
+    updatedRegister?: CashRegister;
+    auditLog?: AuditLog;
+  };
+  attempts: number;
+  lastAttemptAt?: string;
+  lastError?: string;
+}
+

@@ -34,7 +34,7 @@ const MainLayout: React.FC = () => {
       <Header />
       <Navigation currentTab={activeSafeTab} setCurrentTab={setCurrentTab} />
 
-      <main className="flex-1 pb-16">
+      <main className="flex-1 pb-24 md:pb-12">
         {activeSafeTab === 'pos' && (
           <POSScreen onGoToCash={() => setCurrentTab('cash')} />
         )}

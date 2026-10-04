@@ -12,7 +12,8 @@ import {
   Employee, 
   EmployeeShift, 
   AuditLog,
-  InventoryMovementType
+  InventoryMovementType,
+  PendingSyncItem
 } from '../types';
 import { 
   INITIAL_USERS, 
@@ -43,6 +44,14 @@ import {
   saveShiftToFirestore,
   saveAuditLogToFirestore
 } from '../firebase/firestoreService';
+import {
+  getPendingSyncQueue,
+  enqueuePendingSync,
+  removePendingSyncItem,
+  processSyncItem,
+  syncAllPendingItems,
+  getLastSyncTime
+} from '../firebase/syncService';
 
 interface CartItem {
   product: Product;
@@ -115,6 +124,13 @@ interface AppContextType {
   // Recent Completed Sale for Receipt modal
   activeReceiptSale: Sale | null;
   setActiveReceiptSale: (sale: Sale | null) => void;
+
+  // Offline & Cloud Sync Management
+  isOnline: boolean;
+  syncQueue: PendingSyncItem[];
+  isSyncing: boolean;
+  lastSyncSuccessTime: string | null;
+  syncPendingTransactions: () => Promise<{ success: boolean; syncedCount: number; errors?: string[] }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -367,6 +383,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [cartDiscount, setCartDiscount] = useState<number>(0);
   const [activeReceiptSale, setActiveReceiptSale] = useState<Sale | null>(null);
 
+  // Offline & Synchronization State
+  const [isOnline, setIsOnline] = useState<boolean>(() => {
+    return typeof navigator !== 'undefined' ? navigator.onLine : true;
+  });
+  const [syncQueue, setSyncQueue] = useState<PendingSyncItem[]>(() => getPendingSyncQueue());
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [lastSyncSuccessTime, setLastSyncSuccessTime] = useState<string | null>(() => getLastSyncTime());
+
+  // Background Sync Engine
+  const syncPendingTransactions = async () => {
+    if (isSyncing) return { success: false, syncedCount: 0 };
+    const queue = getPendingSyncQueue();
+    if (queue.length === 0) {
+      setSyncQueue([]);
+      return { success: true, syncedCount: 0 };
+    }
+
+    setIsSyncing(true);
+    try {
+      const result = await syncAllPendingItems(products);
+      setSyncQueue(result.remainingQueue);
+      if (result.successCount > 0) {
+        setLastSyncSuccessTime(new Date().toISOString());
+      }
+      setIsSyncing(false);
+      return {
+        success: result.failedCount === 0,
+        syncedCount: result.successCount,
+        errors: result.errors,
+      };
+    } catch (err) {
+      console.error('Error during batch synchronization:', err);
+      setIsSyncing(false);
+      return { success: false, syncedCount: 0, errors: [String(err)] };
+    }
+  };
+
+  // Connectivity Monitoring & Automatic Sync Recovery
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      // Auto sync immediately when network is recovered!
+      syncPendingTransactions();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Initial sync check on mount if online and queue has items
+    if (typeof navigator !== 'undefined' && navigator.onLine && syncQueue.length > 0) {
+      syncPendingTransactions();
+    }
+
+    // Periodic sync check every 25 seconds if there are items in the queue
+    const interval = setInterval(() => {
+      if (typeof navigator !== 'undefined' && navigator.onLine && getPendingSyncQueue().length > 0) {
+        syncPendingTransactions();
+      }
+    }, 25000);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(interval);
+    };
+  }, []);
+
   // Sync state to LocalStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
@@ -408,7 +495,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs));
   }, [auditLogs]);
 
-  // Real-time Firestore Sync
+  // Real-time Firestore Sync with Offline Protection Reconciliation
   useEffect(() => {
     let unsubProducts: (() => void) | undefined;
     let unsubCategories: (() => void) | undefined;
@@ -427,17 +514,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubCategories = subscribeToCategories((cats) => {
         if (cats && cats.length > 0) setCategories(cats);
       });
-      unsubSales = subscribeToSales((s) => {
-        if (s && s.length > 0) setSales(s);
+      unsubSales = subscribeToSales((remoteSales) => {
+        if (remoteSales) {
+          setSales(prev => {
+            const currentQueue = getPendingSyncQueue();
+            const pendingSaleIds = new Set(
+              currentQueue.filter(q => q.type === 'SALE' && q.data.sale).map(q => q.data.sale!.id)
+            );
+            const pendingLocalSales = prev.filter(s => pendingSaleIds.has(s.id) && !remoteSales.some(r => r.id === s.id));
+            return [...pendingLocalSales, ...remoteSales];
+          });
+        }
       });
       unsubRegisters = subscribeToCashRegisters((regs) => {
         if (regs && regs.length > 0) setCashRegisters(regs);
       });
-      unsubMovements = subscribeToCashMovements((movs) => {
-        if (movs && movs.length > 0) setCashMovements(movs);
+      unsubMovements = subscribeToCashMovements((remoteMovs) => {
+        if (remoteMovs) {
+          setCashMovements(prev => {
+            const currentQueue = getPendingSyncQueue();
+            const pendingMovIds = new Set(
+              currentQueue.filter(q => q.data.cashMovement).map(q => q.data.cashMovement!.id)
+            );
+            const pendingLocalMovs = prev.filter(m => pendingMovIds.has(m.id) && !remoteMovs.some(r => r.id === m.id));
+            return [...pendingLocalMovs, ...remoteMovs];
+          });
+        }
       });
-      unsubInvMovements = subscribeToInventoryMovements((invs) => {
-        if (invs && invs.length > 0) setInventoryMovements(invs);
+      unsubInvMovements = subscribeToInventoryMovements((remoteInvs) => {
+        if (remoteInvs) {
+          setInventoryMovements(prev => {
+            const currentQueue = getPendingSyncQueue();
+            const pendingInvIds = new Set(
+              currentQueue.flatMap(q => q.data.inventoryMovements?.map(i => i.id) || [])
+            );
+            const pendingLocalInvs = prev.filter(inv => pendingInvIds.has(inv.id) && !remoteInvs.some(r => r.id === inv.id));
+            return [...pendingLocalInvs, ...remoteInvs];
+          });
+        }
       });
       unsubEmployees = subscribeToEmployees((emps) => {
         if (emps && emps.length > 0) setEmployees(emps);
@@ -720,8 +834,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       discount: cartDiscount,
       total: cartTotal,
       payments: params.payments,
-      tenderedCash: params.tenderedCash,
-      change: params.change,
+      ...(params.tenderedCash !== undefined && params.tenderedCash !== null ? { tenderedCash: params.tenderedCash } : {}),
+      ...(params.change !== undefined && params.change !== null ? { change: params.change } : {}),
       status: 'CONFIRMADA',
       items: saleItems,
       createdAt: new Date().toISOString(),
@@ -754,8 +868,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Check if cash payment exists
     const cashPortion = params.payments.find(p => p.method === 'EFECTIVO')?.amount || 0;
+    let cashMove: CashMovement | undefined = undefined;
+    let updatedRegister: CashRegister | undefined = undefined;
+
     if (cashPortion > 0) {
-      const cashMove: CashMovement = {
+      cashMove = {
         id: `mov-${Date.now()}`,
         cashRegisterId: currentCashRegister.id,
         type: 'VENTA_EFECTIVO',
@@ -765,32 +882,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdBy: currentUser.name,
         createdAt: new Date().toISOString(),
       };
-      setCashMovements(prev => [cashMove, ...prev]);
+      setCashMovements(prev => [cashMove!, ...prev]);
 
       // Only cash increases physical expected cash in register!
       const newExpectedCash = currentCashRegister.expectedCash + cashPortion;
-      const updatedRegister = { ...currentCashRegister, expectedCash: Number(newExpectedCash.toFixed(2)) };
-      setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? updatedRegister : cr));
-      saveCashMovementToFirestore(cashMove).catch(console.warn);
-      saveCashRegisterToFirestore(updatedRegister).catch(console.warn);
+      updatedRegister = { ...currentCashRegister, expectedCash: Number(newExpectedCash.toFixed(2)) };
+      setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? updatedRegister! : cr));
     }
 
     setProducts(updatedProducts);
     setInventoryMovements(prev => [...newInventoryMovements, ...prev]);
     setSales(prev => [newSale, ...prev]);
 
-    // Async persist to Firestore
-    saveSaleToFirestore(newSale).catch(console.warn);
-    for (const inv of newInventoryMovements) {
-      saveInventoryMovementToFirestore(inv).catch(console.warn);
-    }
-    for (const p of updatedProducts) {
-      if (cart.some(ci => ci.product.id === p.id)) {
-        saveProductToFirestore(p).catch(console.warn);
-      }
-    }
+    // Create Audit Log
+    const saleLog: AuditLog = {
+      id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: 'REGISTRAR_VENTA',
+      entity: 'SALE',
+      entityId: saleId,
+      details: `Venta ${saleCode} por S/ ${cartTotal.toFixed(2)} - Pagos: ${params.payments.map(p => `${p.method}: S/ ${p.amount.toFixed(2)}`).join(', ')}`,
+      createdAt: new Date().toISOString(),
+    };
+    setAuditLogs(prev => [saleLog, ...prev]);
 
-    addAuditLog('REGISTRAR_VENTA', 'SALE', saleId, `Venta ${saleCode} por S/ ${cartTotal.toFixed(2)} - Pagos: ${params.payments.map(p => `${p.method}: S/ ${p.amount.toFixed(2)}`).join(', ')}`);
+    // Offline-First Enqueue for Cloud Sync
+    const syncItem = enqueuePendingSync({
+      type: 'SALE',
+      data: {
+        sale: newSale,
+        inventoryMovements: newInventoryMovements,
+        updatedProducts: updatedProducts
+          .filter(p => cart.some(ci => ci.product.id === p.id))
+          .map(p => ({ id: p.id, stockCurrent: p.stockCurrent })),
+        cashMovement: cashMove,
+        updatedRegister: updatedRegister,
+        auditLog: saleLog,
+      },
+    });
+    setSyncQueue(getPendingSyncQueue());
+
+    // Immediate background synchronization attempt if online
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      processSyncItem(syncItem, updatedProducts)
+        .then(() => {
+          removePendingSyncItem(syncItem.id);
+          setSyncQueue(getPendingSyncQueue());
+          setLastSyncSuccessTime(new Date().toISOString());
+        })
+        .catch((err) => {
+          console.warn('Network issue writing sale to Firestore. Kept safely in offline queue:', err);
+        });
+    }
 
     // Reset Cart
     clearCart();
@@ -836,8 +980,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Revert cash movement if cash was paid
     const cashPortion = saleToVoid.payments.find(p => p.method === 'EFECTIVO')?.amount || 0;
+    let cashReversal: CashMovement | undefined = undefined;
+    let updatedRegister: CashRegister | undefined = undefined;
+
     if (cashPortion > 0 && currentCashRegister) {
-      const cashReversal: CashMovement = {
+      cashReversal = {
         id: `mov-void-${Date.now()}`,
         cashRegisterId: currentCashRegister.id,
         type: 'ANULACION_VENTA',
@@ -847,12 +994,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdBy: currentUser.name,
         createdAt: new Date().toISOString(),
       };
-      setCashMovements(prev => [cashReversal, ...prev]);
+      setCashMovements(prev => [cashReversal!, ...prev]);
       const newExpectedCash = Math.max(0, currentCashRegister.expectedCash - cashPortion);
-      const updatedRegister = { ...currentCashRegister, expectedCash: Number(newExpectedCash.toFixed(2)) };
-      setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? updatedRegister : cr));
-      saveCashMovementToFirestore(cashReversal).catch(console.warn);
-      saveCashRegisterToFirestore(updatedRegister).catch(console.warn);
+      updatedRegister = { ...currentCashRegister, expectedCash: Number(newExpectedCash.toFixed(2)) };
+      setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? updatedRegister! : cr));
     }
 
     const updatedSale: Sale = {
@@ -866,18 +1011,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setInventoryMovements(prev => [...newInvMoves, ...prev]);
     setSales(prev => prev.map(s => s.id === saleId ? updatedSale : s));
 
-    // Async persist to Firestore
-    saveSaleToFirestore(updatedSale).catch(console.warn);
-    for (const inv of newInvMoves) {
-      saveInventoryMovementToFirestore(inv).catch(console.warn);
-    }
-    for (const p of updatedProducts) {
-      if (saleToVoid.items.some(i => i.productId === p.id)) {
-        saveProductToFirestore(p).catch(console.warn);
-      }
-    }
+    const voidLog: AuditLog = {
+      id: `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      userId: currentUser.id,
+      userName: currentUser.name,
+      action: 'ANULAR_VENTA',
+      entity: 'SALE',
+      entityId: saleId,
+      details: `Anulada venta ${saleToVoid.code} por ${currentUser.name}. Motivo: ${reason}`,
+      createdAt: new Date().toISOString(),
+    };
+    setAuditLogs(prev => [voidLog, ...prev]);
 
-    addAuditLog('ANULAR_VENTA', 'SALE', saleId, `Anulada venta ${saleToVoid.code} por ${currentUser.name}. Motivo: ${reason}`);
+    // Offline-First Enqueue for Cloud Sync
+    const syncItem = enqueuePendingSync({
+      type: 'VOID_SALE',
+      data: {
+        sale: updatedSale,
+        inventoryMovements: newInvMoves,
+        updatedProducts: updatedProducts
+          .filter(p => saleToVoid.items.some(i => i.productId === p.id))
+          .map(p => ({ id: p.id, stockCurrent: p.stockCurrent })),
+        cashMovement: cashReversal,
+        updatedRegister: updatedRegister,
+        auditLog: voidLog,
+      },
+    });
+    setSyncQueue(getPendingSyncQueue());
+
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      processSyncItem(syncItem, updatedProducts)
+        .then(() => {
+          removePendingSyncItem(syncItem.id);
+          setSyncQueue(getPendingSyncQueue());
+          setLastSyncSuccessTime(new Date().toISOString());
+        })
+        .catch(console.warn);
+    }
 
     return { success: true };
   };
@@ -1182,6 +1352,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addAuditLog,
         activeReceiptSale,
         setActiveReceiptSale,
+        isOnline,
+        syncQueue,
+        isSyncing,
+        lastSyncSuccessTime,
+        syncPendingTransactions,
       }}
     >
       {children}

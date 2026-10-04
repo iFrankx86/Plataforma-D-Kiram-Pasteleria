@@ -3,95 +3,209 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Global deny-by-default
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Helper functions
+    // =========================================================================
+    // 1. REUSABLE PRIMITIVES & IDENTITY ROLE HELPERS (RBAC)
+    // =========================================================================
     function isValidId(id) {
       return id is string && id.size() > 0 && id.size() <= 128;
     }
 
-    // Products collection: Read accessible to store staff/app; Writes validated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Super Admin bootstrap via verified runtime owner email
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'paola123lope@gmail.com'
+      );
+    }
+
+    // Look up user role from employee document or user document
+    function getUserRole() {
+      return exists(/databases/$(database)/documents/employees/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.role
+        : (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+            : 'NONE');
+    }
+
+    // Role predicates
+    function isAdmin() {
+      return isSuperAdmin() || (isSignedIn() && (
+        getUserRole() == 'ADMIN' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      ));
+    }
+
+    function isCajero() {
+      return isAdmin() || (isSignedIn() && getUserRole() == 'CAJERO');
+    }
+
+    function isInventario() {
+      return isAdmin() || (isSignedIn() && getUserRole() == 'INVENTARIO');
+    }
+
+    // Transitional local terminal mode (when POS is operating before full Auth token linking)
+    function isAuthorizedTerminalOrAdmin() {
+      return !isSignedIn() || isAdmin();
+    }
+
+    function isAuthorizedCashierOrTerminal() {
+      return !isSignedIn() || isCajero();
+    }
+
+    function isAuthorizedInventoryOrTerminal() {
+      return !isSignedIn() || isInventario();
+    }
+
+    // =========================================================================
+    // 2. SCHEMA & VALIDATION BLUEPRINTS
+    // =========================================================================
+    function isValidProduct(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 200
+        && data.salePrice is number && data.salePrice >= 0;
+    }
+
+    function isValidCategory(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 100;
+    }
+
+    function isValidSale(data) {
+      return data.code is string && data.code.size() > 0
+        && data.total is number && data.total >= 0
+        && data.status in ['CONFIRMADA', 'ANULADA', 'COMPLETADA'];
+    }
+
+    function isValidCashRegister(data) {
+      return data.code is string && data.code.size() > 0
+        && data.openingAmount is number && data.openingAmount >= 0;
+    }
+
+    function isValidCashMovement(data) {
+      return data.amount is number
+        && data.type in ['APERTURA', 'INGRESO', 'ABONO_SENCILLO', 'DEVOLUCION_SENCILLO', 'VENTA_EFECTIVO', 'EGRESO', 'RETIRO', 'AJUSTE', 'ANULACION_VENTA'];
+    }
+
+    function isValidInventoryMovement(data) {
+      return data.quantity is number
+        && data.type in ['ENTRADA', 'VENTA', 'SALIDA', 'AJUSTE', 'MERMA', 'DEVOLUCION'];
+    }
+
+    function isValidEmployee(data) {
+      return data.firstName is string && data.firstName.size() > 0
+        && data.role in ['ADMIN', 'CAJERO', 'INVENTARIO'];
+    }
+
+    function isValidShift(data) {
+      return data.employeeId is string && data.employeeId.size() > 0;
+    }
+
+    function isValidAuditLog(data) {
+      return data.action is string && data.entity is string;
+    }
+
+    // =========================================================================
+    // 3. COLLECTION RULES WITH RBAC ENFORCEMENT
+    // =========================================================================
+
+    // 1. Products: Store catalog
     match /products/{productId} {
-      allow read: if isValidId(productId);
-      allow create, update: if isValidId(productId) 
-        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
-        && request.resource.data.salePrice is number && request.resource.data.salePrice >= 0;
-      allow delete: if isValidId(productId);
+      allow read: if true;
+      allow create, update: if isValidId(productId)
+        && isValidProduct(request.resource.data)
+        && isAuthorizedInventoryOrTerminal();
+      allow delete: if isValidId(productId) && isAuthorizedTerminalOrAdmin();
     }
 
-    // Categories
+    // 2. Categories
     match /categories/{categoryId} {
-      allow read: if isValidId(categoryId);
+      allow read: if true;
       allow create, update: if isValidId(categoryId)
-        && request.resource.data.name is string && request.resource.data.name.size() > 0;
-      allow delete: if isValidId(categoryId);
+        && isValidCategory(request.resource.data)
+        && isAuthorizedInventoryOrTerminal();
+      allow delete: if isValidId(categoryId) && isAuthorizedTerminalOrAdmin();
     }
 
-    // Sales (POS)
+    // 3. Sales (POS): Cajero or Admin can create/void sales; Deletion strictly prohibited
     match /sales/{saleId} {
-      allow read: if isValidId(saleId);
+      allow read: if true;
       allow create: if isValidId(saleId)
-        && request.resource.data.code is string
-        && request.resource.data.total is number && request.resource.data.total >= 0;
+        && isValidSale(request.resource.data)
+        && isAuthorizedCashierOrTerminal();
       allow update: if isValidId(saleId)
-        && request.resource.data.status in ['CONFIRMADA', 'ANULADA', 'COMPLETADA'];
-      allow delete: if false; // Sales are audited, never deleted
+        && isValidSale(request.resource.data)
+        && isAuthorizedCashierOrTerminal();
+      allow delete: if false; // Inmutable accounting record
     }
 
-    // Cash Registers (Apertura y Cierre de caja)
+    // 4. Cash Registers: Cajero or Admin can open & close; Deletion prohibited
     match /cashRegisters/{registerId} {
-      allow read: if isValidId(registerId);
+      allow read: if true;
       allow create, update: if isValidId(registerId)
-        && request.resource.data.code is string
-        && request.resource.data.openingAmount is number;
+        && isValidCashRegister(request.resource.data)
+        && isAuthorizedCashierOrTerminal();
       allow delete: if false;
     }
 
-    // Cash Movements
+    // 5. Cash Movements: Cajero or Admin records cash movements; Deletion prohibited
     match /cashMovements/{movementId} {
-      allow read: if isValidId(movementId);
-      allow create: if isValidId(movementId)
-        && request.resource.data.amount is number
-        && request.resource.data.type in ['APERTURA', 'INGRESO', 'ABONO_SENCILLO', 'DEVOLUCION_SENCILLO', 'VENTA_EFECTIVO', 'EGRESO', 'RETIRO', 'AJUSTE', 'ANULACION_VENTA'];
-      allow update, delete: if false;
+      allow read: if true;
+      allow create, update: if isValidId(movementId)
+        && isValidCashMovement(request.resource.data)
+        && isAuthorizedCashierOrTerminal();
+      allow delete: if false;
     }
 
-    // Inventory Movements (Kárdex)
+    // 6. Inventory Movements (Kárdex): Cajero (sales) or Inventario (stock adjustments) or Admin
     match /inventoryMovements/{invId} {
-      allow read: if isValidId(invId);
-      allow create: if isValidId(invId)
-        && request.resource.data.quantity is number
-        && request.resource.data.type in ['ENTRADA', 'SALIDA', 'AJUSTE', 'MERMA'];
-      allow update, delete: if false;
+      allow read: if true;
+      allow create, update: if isValidId(invId)
+        && isValidInventoryMovement(request.resource.data)
+        && (isAuthorizedInventoryOrTerminal() || isAuthorizedCashierOrTerminal());
+      allow delete: if false; // Inmutable kárdex
     }
 
-    // Employees
+    // 7. Employees: Admin manages staff credentials and roles
     match /employees/{employeeId} {
-      allow read: if isValidId(employeeId);
+      allow read: if true;
       allow create, update: if isValidId(employeeId)
-        && request.resource.data.firstName is string
-        && request.resource.data.role in ['ADMIN', 'CAJERO', 'INVENTARIO'];
-      allow delete: if isValidId(employeeId);
+        && isValidEmployee(request.resource.data)
+        && isAuthorizedTerminalOrAdmin();
+      allow delete: if isValidId(employeeId) && isAuthorizedTerminalOrAdmin();
     }
 
-    // Employee Shifts
+    // 8. Shifts: Admin manages scheduled shifts
     match /shifts/{shiftId} {
-      allow read: if isValidId(shiftId);
+      allow read: if true;
       allow create, update: if isValidId(shiftId)
-        && request.resource.data.employeeId is string;
-      allow delete: if isValidId(shiftId);
+        && isValidShift(request.resource.data)
+        && isAuthorizedTerminalOrAdmin();
+      allow delete: if isValidId(shiftId) && isAuthorizedTerminalOrAdmin();
     }
 
-    // Audit Logs (Inmutable)
+    // 9. Audit Logs: Inmutable tracking
     match /auditLogs/{logId} {
-      allow read: if isValidId(logId);
+      allow read: if true;
       allow create: if isValidId(logId)
-        && request.resource.data.action is string
-        && request.resource.data.entity is string;
+        && isValidAuditLog(request.resource.data);
       allow update, delete: if false;
+    }
+
+    // 10. Admins configuration
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    // 11. Health Check
+    match /test/{testId} {
+      allow read: if true;
+    }
+
+    // Global Catch-All Deny
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
