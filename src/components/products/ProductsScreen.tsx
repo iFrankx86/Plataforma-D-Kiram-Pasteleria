@@ -40,6 +40,7 @@ export const ProductsScreen: React.FC = () => {
   const { 
     products, 
     categories, 
+    isLoadingProducts,
     addProduct, 
     updateProduct, 
     deleteProduct, 
@@ -527,7 +528,22 @@ export const ProductsScreen: React.FC = () => {
               <span className="text-[11px] text-stone-400">Toca para seleccionar y gestionar</span>
             </div>
 
-            {filteredProducts.length === 0 ? (
+            {isLoadingProducts && products.length === 0 ? (
+              <div className="p-4 space-y-3 animate-pulse" role="status" aria-label="Cargando catálogo...">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 bg-stone-50 rounded-2xl border border-stone-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-stone-200 rounded-xl shrink-0" />
+                      <div className="space-y-1.5">
+                        <div className="h-3.5 bg-stone-200 rounded w-40" />
+                        <div className="h-2.5 bg-stone-150 rounded w-24" />
+                      </div>
+                    </div>
+                    <div className="h-5 bg-stone-200 rounded w-16" />
+                  </div>
+                ))}
+              </div>
+            ) : filteredProducts.length === 0 ? (
               <div className="p-8 text-center text-stone-400">
                 <Cake className="w-8 h-8 mx-auto text-stone-300 mb-2" />
                 <p className="font-semibold text-stone-700 text-xs">No se encontraron productos con estos filtros</p>

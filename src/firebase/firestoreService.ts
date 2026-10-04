@@ -42,6 +42,12 @@ export function subscribeToProducts(onData: (products: Product[]) => void) {
       snapshot.forEach((doc) => {
         items.push(doc.data() as Product);
       });
+
+      // If remote collection has fewer products than initial catalog, seed missing in background
+      if (items.length < INITIAL_PRODUCTS.length) {
+        seedInitialProducts();
+      }
+
       // Sort by name or sku
       items.sort((a, b) => a.name.localeCompare(b.name));
       onData(items);
@@ -329,30 +335,42 @@ export async function saveAuditLogToFirestore(log: AuditLog): Promise<void> {
   }
 }
 
-// Initial Seed Helpers (run in batches of 400 to respect Firestore 500 limit)
+// Initial Seed Helpers (run in batches of 300 to respect Firestore 500 limit)
 export async function seedInitialProducts(): Promise<void> {
   try {
     const existing = await getDocs(collection(db, 'products'));
-    if (!existing.empty) return;
+    const existingIds = new Set<string>();
+    const existingNames = new Set<string>();
+    existing.forEach((doc) => {
+      existingIds.add(doc.id);
+      const data = doc.data() as Product;
+      if (data.name) existingNames.add(data.name.trim().toLowerCase());
+    });
+
+    const missingProducts = INITIAL_PRODUCTS.filter(
+      (p) => !existingIds.has(p.id) && !existingNames.has(p.name.trim().toLowerCase())
+    );
+
+    if (missingProducts.length === 0) return;
 
     const batches = [];
     let currentBatch = writeBatch(db);
     let count = 0;
 
-    for (const prod of INITIAL_PRODUCTS) {
+    for (const prod of missingProducts) {
       const docRef = doc(db, 'products', prod.id);
-      currentBatch.set(docRef, prod);
+      currentBatch.set(docRef, removeUndefinedFields(prod));
       count++;
-      if (count % 400 === 0) {
+      if (count % 300 === 0) {
         batches.push(currentBatch.commit());
         currentBatch = writeBatch(db);
       }
     }
-    if (count % 400 !== 0) {
+    if (count % 300 !== 0) {
       batches.push(currentBatch.commit());
     }
     await Promise.all(batches);
-    console.log(`Seeded ${INITIAL_PRODUCTS.length} initial products to Firestore.`);
+    console.log(`Seeded ${missingProducts.length} missing products to Firestore.`);
   } catch (e) {
     console.warn('Could not seed initial products to Firestore:', e);
   }

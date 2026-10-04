@@ -66,6 +66,7 @@ interface AppContextType {
   // Categories & Products
   categories: Category[];
   products: Product[];
+  isLoadingProducts: boolean;
   addProduct: (product: Omit<Product, 'id' | 'createdAt'>) => { success: boolean; error?: string; product?: Product };
   updateProduct: (id: string, updates: Partial<Product>) => { success: boolean; error?: string };
   deleteProduct: (id: string) => { success: boolean; error?: string };
@@ -200,6 +201,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     return INITIAL_PRODUCTS;
   });
+
+  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
 
   // Cash Register (Frank Lope aperturó hoy a las 10:00 AM)
   const todayStr = new Date().toISOString().split('T')[0];
@@ -507,9 +510,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let unsubShifts: (() => void) | undefined;
     let unsubLogs: (() => void) | undefined;
 
+    // Dismiss skeleton state after a brief network grace period if offline or slow
+    const loadingSafetyTimer = setTimeout(() => {
+      setIsLoadingProducts(false);
+    }, 750);
+
     try {
       unsubProducts = subscribeToProducts((prods) => {
-        if (prods && prods.length > 0) setProducts(prods);
+        setIsLoadingProducts(false);
+        if (prods && prods.length > 0) {
+          setProducts((prev) => {
+            const remoteMapById = new Map(prods.map((p) => [p.id, p]));
+            const remoteMapBySku = new Map(prods.map((p) => [p.sku.trim().toLowerCase(), p]));
+
+            // Remote products take precedence (latest live stock, status, etc.)
+            const merged = [...prods];
+
+            // Retain any items from INITIAL_PRODUCTS or current state that are not in remote yet
+            const baseItems = prev.length > INITIAL_PRODUCTS.length ? prev : INITIAL_PRODUCTS;
+            for (const item of baseItems) {
+              if (!remoteMapById.has(item.id) && !remoteMapBySku.has(item.sku.trim().toLowerCase())) {
+                merged.push(item);
+              }
+            }
+
+            return merged;
+          });
+        }
       });
       unsubCategories = subscribeToCategories((cats) => {
         if (cats && cats.length > 0) setCategories(cats);
@@ -567,6 +594,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     return () => {
+      clearTimeout(loadingSafetyTimer);
       unsubProducts?.();
       unsubCategories?.();
       unsubSales?.();
@@ -1317,6 +1345,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         users: INITIAL_USERS,
         categories,
         products,
+        isLoadingProducts,
         addProduct,
         updateProduct,
         deleteProduct,

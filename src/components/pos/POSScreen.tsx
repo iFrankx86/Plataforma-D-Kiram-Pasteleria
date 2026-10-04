@@ -20,6 +20,7 @@ import {
   Receipt,
   Eye
 } from 'lucide-react';
+import { ProductGridSkeleton, ProductCategorySkeleton } from '../common/ProductGridSkeleton';
 
 interface POSScreenProps {
   onGoToCash: () => void;
@@ -29,6 +30,7 @@ export const POSScreen: React.FC<POSScreenProps> = ({ onGoToCash }) => {
   const { 
     products, 
     categories, 
+    isLoadingProducts,
     cart, 
     addToCart, 
     updateCartQuantity, 
@@ -400,127 +402,153 @@ export const POSScreen: React.FC<POSScreenProps> = ({ onGoToCash }) => {
           </div>
 
           {/* Category Tabs */}
-          <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-            <button
-              onClick={() => setSelectedCategory('ALL')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition shrink-0 ${
-                selectedCategory === 'ALL'
-                  ? 'bg-amber-600 text-white shadow-xs'
-                  : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
-              }`}
-            >
-              Todos los Productos ({products.filter(p => p.active).length})
-            </button>
-            {categories.filter(c => c.active).map(cat => {
-              const count = products.filter(p => p.active && p.categoryId === cat.id).length;
-              return (
+          {isLoadingProducts && categories.length === 0 ? (
+            <ProductCategorySkeleton />
+          ) : (
+            <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+              <button
+                onClick={() => setSelectedCategory('ALL')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition shrink-0 ${
+                  selectedCategory === 'ALL'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
+                }`}
+              >
+                Todos los Productos ({products.filter(p => p.active).length})
+              </button>
+              {categories.filter(c => c.active).map(cat => {
+                const count = products.filter(p => p.active && p.categoryId === cat.id).length;
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition shrink-0 ${
+                      selectedCategory === cat.id
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
+                    }`}
+                  >
+                    {cat.name} ({count})
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Product Cards Grid with Skeleton Loader */}
+          {isLoadingProducts && products.length === 0 ? (
+            <ProductGridSkeleton count={8} />
+          ) : filteredProducts.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-stone-200 p-12 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+                <Search className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-stone-800 text-sm">No se encontraron productos</h3>
+              <p className="text-xs text-stone-500 max-w-sm mx-auto">
+                No hay resultados para tu búsqueda o la categoría seleccionada no contiene productos disponibles.
+              </p>
+              {searchQuery && (
                 <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition shrink-0 ${
-                    selectedCategory === cat.id
-                      ? 'bg-amber-600 text-white shadow-xs'
-                      : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
-                  }`}
+                  onClick={() => setSearchQuery('')}
+                  className="px-4 py-2 bg-stone-100 hover:bg-stone-200 rounded-xl text-xs font-semibold text-stone-700 transition"
                 >
-                  {cat.name} ({count})
+                  Limpiar búsqueda
                 </button>
-              );
-            })}
-          </div>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3.5">
+              {filteredProducts.map(product => {
+                const inCart = cart.find(ci => ci.product.id === product.id);
+                const isOutOfStock = product.stockCurrent <= 0;
+                const isLowStock = product.stockCurrent > 0 && product.stockCurrent <= product.stockMinimum;
 
-          {/* Product Cards Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3.5">
-            {filteredProducts.map(product => {
-              const inCart = cart.find(ci => ci.product.id === product.id);
-              const isOutOfStock = product.stockCurrent <= 0;
-              const isLowStock = product.stockCurrent > 0 && product.stockCurrent <= product.stockMinimum;
+                return (
+                  <div
+                    key={product.id}
+                    onClick={() => !isOutOfStock && handleAddToCart(product)}
+                    className={`group relative bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between cursor-pointer ${
+                      isOutOfStock ? 'opacity-50 cursor-not-allowed bg-stone-100' : 'hover:border-amber-400'
+                    }`}
+                  >
+                    {/* Image */}
+                    <div>
+                      <div className="relative aspect-4/3 overflow-hidden bg-stone-100">
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                          loading="lazy"
+                        />
+                        
+                        {/* Stock Pill Badge */}
+                        <div className="absolute top-2 right-2">
+                          {isOutOfStock ? (
+                            <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white font-bold text-[10px] shadow-xs">
+                              Agotado
+                            </span>
+                          ) : isLowStock ? (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white font-bold text-[10px] shadow-xs">
+                              Quedan {product.stockCurrent}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full bg-stone-900/75 text-stone-200 font-medium text-[10px] backdrop-blur-xs">
+                              {product.stockCurrent} {product.unit}s
+                            </span>
+                          )}
+                        </div>
 
-              return (
-                <div
-                  key={product.id}
-                  onClick={() => !isOutOfStock && handleAddToCart(product)}
-                  className={`group relative bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between cursor-pointer ${
-                    isOutOfStock ? 'opacity-50 cursor-not-allowed bg-stone-100' : 'hover:border-amber-400'
-                  }`}
-                >
-                  {/* Image */}
-                  <div>
-                    <div className="relative aspect-4/3 overflow-hidden bg-stone-100">
-                      <img
-                        src={product.image}
-                        alt={product.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                        loading="lazy"
-                      />
-                      
-                      {/* Stock Pill Badge */}
-                      <div className="absolute top-2 right-2">
-                        {isOutOfStock ? (
-                          <span className="px-2 py-0.5 rounded-full bg-rose-600 text-white font-bold text-[10px] shadow-xs">
-                            Agotado
-                          </span>
-                        ) : isLowStock ? (
-                          <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white font-bold text-[10px] shadow-xs">
-                            Quedan {product.stockCurrent}
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full bg-stone-900/75 text-stone-200 font-medium text-[10px] backdrop-blur-xs">
-                            {product.stockCurrent} {product.unit}s
-                          </span>
+                        {/* Cart counter indicator */}
+                        {inCart && (
+                          <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-amber-600 text-white font-bold text-xs flex items-center justify-center shadow-md ring-2 ring-white animate-in zoom-in-75">
+                            {inCart.quantity}
+                          </div>
                         )}
                       </div>
 
-                      {/* Cart counter indicator */}
-                      {inCart && (
-                        <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-amber-600 text-white font-bold text-xs flex items-center justify-center shadow-md ring-2 ring-white animate-in zoom-in-75">
-                          {inCart.quantity}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="p-2.5 sm:p-3">
-                      <h3 className="font-bold text-stone-900 text-xs sm:text-sm line-clamp-2 leading-snug group-hover:text-amber-800 transition">
-                        {product.name}
-                      </h3>
-                      <div className="text-[10px] text-stone-400 font-mono mt-0.5">
-                        {product.sku}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-2.5 sm:p-3 pt-0">
-                    <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] text-stone-400">Precio</div>
-                        <div className="font-serif-display font-bold text-stone-900 text-sm sm:text-base">
-                          S/ {product.salePrice.toFixed(2)}
+                      <div className="p-2.5 sm:p-3">
+                        <h3 className="font-bold text-stone-900 text-xs sm:text-sm line-clamp-2 leading-snug group-hover:text-amber-800 transition">
+                          {product.name}
+                        </h3>
+                        <div className="text-[10px] text-stone-400 font-mono mt-0.5">
+                          {product.sku}
                         </div>
                       </div>
-
-                      <button
-                        type="button"
-                        disabled={isOutOfStock}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!isOutOfStock) handleAddToCart(product);
-                        }}
-                        className={`w-9 h-9 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition shadow-xs active:scale-90 ${
-                          isOutOfStock
-                            ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
-                            : 'bg-amber-100 hover:bg-amber-600 text-amber-900 hover:text-white'
-                        }`}
-                        title="Agregar al pedido"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
                     </div>
-                  </div>
 
-                </div>
-              );
-            })}
-          </div>
+                    <div className="p-2.5 sm:p-3 pt-0">
+                      <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
+                        <div>
+                          <div className="text-[10px] text-stone-400">Precio</div>
+                          <div className="font-serif-display font-bold text-stone-900 text-sm sm:text-base">
+                            S/ {product.salePrice.toFixed(2)}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isOutOfStock}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!isOutOfStock) handleAddToCart(product);
+                          }}
+                          className={`w-9 h-9 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center transition shadow-xs active:scale-90 ${
+                            isOutOfStock
+                              ? 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                              : 'bg-amber-100 hover:bg-amber-600 text-amber-900 hover:text-white'
+                          }`}
+                          title="Agregar al pedido"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
         </div>
 
