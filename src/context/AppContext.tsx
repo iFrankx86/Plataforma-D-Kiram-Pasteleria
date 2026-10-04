@@ -46,6 +46,7 @@ import {
 } from '../firebase/firestoreService';
 import {
   getPendingSyncQueue,
+  savePendingSyncQueue,
   enqueuePendingSync,
   removePendingSyncItem,
   processSyncItem,
@@ -180,20 +181,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Check if notebook products need to be merged without duplicating ("si existe no lo hagas")
-          const existingNames = new Set(parsed.map((p: Product) => p.name.trim().toLowerCase()));
-          const existingSkus = new Set(parsed.map((p: Product) => p.sku.trim().toLowerCase()));
+          // Strictly deduplicate stored products by ID first to clean any legacy corrupted state
+          const seenIds = new Set<string>();
+          const deduplicatedParsed: Product[] = [];
+          for (const item of parsed) {
+            if (item && item.id && !seenIds.has(item.id)) {
+              seenIds.add(item.id);
+              deduplicatedParsed.push(item);
+            }
+          }
+
+          // Check if notebook products need to be merged without duplicating IDs, names, or SKUs
+          const existingIds = new Set(deduplicatedParsed.map((p: Product) => p.id));
+          const existingNames = new Set(deduplicatedParsed.map((p: Product) => p.name.trim().toLowerCase()));
+          const existingSkus = new Set(deduplicatedParsed.map((p: Product) => p.sku.trim().toLowerCase()));
           
           const missingNotebookItems = INITIAL_PRODUCTS.filter(
-            ip => !existingNames.has(ip.name.trim().toLowerCase()) && !existingSkus.has(ip.sku.trim().toLowerCase())
+            ip => !existingIds.has(ip.id) && !existingNames.has(ip.name.trim().toLowerCase()) && !existingSkus.has(ip.sku.trim().toLowerCase())
           );
 
           if (missingNotebookItems.length > 0) {
-            const merged = [...parsed, ...missingNotebookItems];
+            const merged = [...deduplicatedParsed, ...missingNotebookItems];
             localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(merged));
             return merged;
           }
-          return parsed;
+          if (deduplicatedParsed.length !== parsed.length) {
+            localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(deduplicatedParsed));
+          }
+          return deduplicatedParsed;
         }
       } catch (err) {
         console.error('Error reading stored products:', err);
@@ -405,6 +420,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setIsSyncing(true);
     try {
+      // Auto-prune any sales that are already in the sales collection
+      const confirmedSaleIds = new Set(sales.map(s => s.id));
+      const confirmedSaleCodes = new Set(sales.map(s => s.code));
+      const activeQueue = queue.filter(item => {
+        if (item.type === 'SALE' && item.data.sale) {
+          if (confirmedSaleIds.has(item.data.sale.id) || confirmedSaleCodes.has(item.data.sale.code)) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      if (activeQueue.length !== queue.length) {
+        savePendingSyncQueue(activeQueue);
+        setSyncQueue(activeQueue);
+      }
+
+      if (activeQueue.length === 0) {
+        setLastSyncSuccessTime(new Date().toISOString());
+        setIsSyncing(false);
+        return { success: true, syncedCount: queue.length };
+      }
+
       const result = await syncAllPendingItems(products);
       setSyncQueue(result.remainingQueue);
       if (result.successCount > 0) {
@@ -530,11 +568,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const baseItems = prev.length > INITIAL_PRODUCTS.length ? prev : INITIAL_PRODUCTS;
             for (const item of baseItems) {
               if (!remoteMapById.has(item.id) && !remoteMapBySku.has(item.sku.trim().toLowerCase())) {
+                remoteMapById.set(item.id, item);
+                remoteMapBySku.set(item.sku.trim().toLowerCase(), item);
                 merged.push(item);
               }
             }
 
-            return merged;
+            // Strictly deduplicate by ID to guarantee unique React keys
+            const seenIds = new Set<string>();
+            const strictlyUniqueProducts: Product[] = [];
+            for (const p of merged) {
+              if (p && p.id && !seenIds.has(p.id)) {
+                seenIds.add(p.id);
+                strictlyUniqueProducts.push(p);
+              }
+            }
+
+            return strictlyUniqueProducts;
           });
         }
       });
@@ -543,10 +593,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       unsubSales = subscribeToSales((remoteSales) => {
         if (remoteSales) {
+          // Reconcile and prune any items from syncQueue that are already present in remoteSales
+          const remoteSaleIds = new Set(remoteSales.map(r => r.id));
+          const remoteSaleCodes = new Set(remoteSales.map(r => r.code));
+          const currentQueue = getPendingSyncQueue();
+          const prunedQueue = currentQueue.filter(q => {
+            if (q.type === 'SALE' && q.data.sale) {
+              if (remoteSaleIds.has(q.data.sale.id) || remoteSaleCodes.has(q.data.sale.code)) {
+                // The sale is already confirmed and present in Firestore!
+                return false;
+              }
+            }
+            return true;
+          });
+
+          if (prunedQueue.length !== currentQueue.length) {
+            savePendingSyncQueue(prunedQueue);
+            setSyncQueue(prunedQueue);
+          }
+
           setSales(prev => {
-            const currentQueue = getPendingSyncQueue();
             const pendingSaleIds = new Set(
-              currentQueue.filter(q => q.type === 'SALE' && q.data.sale).map(q => q.data.sale!.id)
+              prunedQueue.filter(q => q.type === 'SALE' && q.data.sale).map(q => q.data.sale!.id)
             );
             const pendingLocalSales = prev.filter(s => pendingSaleIds.has(s.id) && !remoteSales.some(r => r.id === s.id));
             return [...pendingLocalSales, ...remoteSales];

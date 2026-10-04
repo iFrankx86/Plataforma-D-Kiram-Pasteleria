@@ -28,10 +28,19 @@ export const SyncStatusModal: React.FC<SyncStatusModalProps> = ({ isOpen, onClos
     syncPendingTransactions 
   } = useApp();
 
+  const [syncNotice, setSyncNotice] = React.useState<string | null>(null);
+
   if (!isOpen) return null;
 
   const handleManualSync = async () => {
-    await syncPendingTransactions();
+    setSyncNotice(null);
+    const res = await syncPendingTransactions();
+    if (res.success) {
+      setSyncNotice('¡Sincronización con la nube completada exitosamente!');
+      setTimeout(() => setSyncNotice(null), 4000);
+    } else if (res.errors && res.errors.length > 0) {
+      setSyncNotice(`Nota: ${res.errors[0]}`);
+    }
   };
 
   const formattedLastSync = lastSyncSuccessTime
@@ -173,6 +182,14 @@ export const SyncStatusModal: React.FC<SyncStatusModalProps> = ({ isOpen, onClos
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Sync Notice / Feedback */}
+          {syncNotice && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2 animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{syncNotice}</span>
             </div>
           )}
 

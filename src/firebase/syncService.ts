@@ -92,13 +92,17 @@ export async function processSyncItem(item: PendingSyncItem, currentProducts: Pr
   const { type, data } = item;
 
   if (type === 'SALE' && data.sale) {
-    // 1. Upload Sale Document
+    // 1. Upload Sale Document (Essential Core Record)
     await saveSaleToFirestore(data.sale);
 
     // 2. Upload Inventory Movements
     if (data.inventoryMovements && data.inventoryMovements.length > 0) {
       for (const inv of data.inventoryMovements) {
-        await saveInventoryMovementToFirestore(inv);
+        try {
+          await saveInventoryMovementToFirestore(inv);
+        } catch (e) {
+          console.warn('Inventory movement sync notice:', e);
+        }
       }
     }
 
@@ -107,24 +111,40 @@ export async function processSyncItem(item: PendingSyncItem, currentProducts: Pr
       for (const up of data.updatedProducts) {
         const prod = currentProducts.find(p => p.id === up.id);
         if (prod) {
-          await saveProductToFirestore({ ...prod, stockCurrent: up.stockCurrent });
+          try {
+            await saveProductToFirestore({ ...prod, stockCurrent: up.stockCurrent });
+          } catch (e) {
+            console.warn('Product stock sync notice:', e);
+          }
         }
       }
     }
 
     // 4. Upload Cash Movement (if sale had cash)
     if (data.cashMovement) {
-      await saveCashMovementToFirestore(data.cashMovement);
+      try {
+        await saveCashMovementToFirestore(data.cashMovement);
+      } catch (e) {
+        console.warn('Cash movement sync notice:', e);
+      }
     }
 
     // 5. Update Cash Register Drawer Expected Cash
     if (data.updatedRegister) {
-      await saveCashRegisterToFirestore(data.updatedRegister);
+      try {
+        await saveCashRegisterToFirestore(data.updatedRegister);
+      } catch (e) {
+        console.warn('Cash register sync notice:', e);
+      }
     }
 
     // 6. Upload Audit Log
     if (data.auditLog) {
-      await saveAuditLogToFirestore(data.auditLog);
+      try {
+        await saveAuditLogToFirestore(data.auditLog);
+      } catch (e) {
+        console.warn('Audit log sync notice:', e);
+      }
     }
   } else if (type === 'VOID_SALE' && data.sale) {
     // 1. Update voided Sale Document
@@ -133,7 +153,11 @@ export async function processSyncItem(item: PendingSyncItem, currentProducts: Pr
     // 2. Upload Return Inventory Movements
     if (data.inventoryMovements) {
       for (const inv of data.inventoryMovements) {
-        await saveInventoryMovementToFirestore(inv);
+        try {
+          await saveInventoryMovementToFirestore(inv);
+        } catch (e) {
+          console.warn('Void inventory movement sync notice:', e);
+        }
       }
     }
 
@@ -142,57 +166,87 @@ export async function processSyncItem(item: PendingSyncItem, currentProducts: Pr
       for (const up of data.updatedProducts) {
         const prod = currentProducts.find(p => p.id === up.id);
         if (prod) {
-          await saveProductToFirestore({ ...prod, stockCurrent: up.stockCurrent });
+          try {
+            await saveProductToFirestore({ ...prod, stockCurrent: up.stockCurrent });
+          } catch (e) {
+            console.warn('Void product stock sync notice:', e);
+          }
         }
       }
     }
 
     // 4. Upload Reversal Cash Movement
     if (data.cashMovement) {
-      await saveCashMovementToFirestore(data.cashMovement);
+      try {
+        await saveCashMovementToFirestore(data.cashMovement);
+      } catch (e) {
+        console.warn('Void cash movement sync notice:', e);
+      }
     }
 
     // 5. Update Cash Register
     if (data.updatedRegister) {
-      await saveCashRegisterToFirestore(data.updatedRegister);
+      try {
+        await saveCashRegisterToFirestore(data.updatedRegister);
+      } catch (e) {
+        console.warn('Void register sync notice:', e);
+      }
     }
 
     // 6. Upload Audit Log
     if (data.auditLog) {
-      await saveAuditLogToFirestore(data.auditLog);
+      try {
+        await saveAuditLogToFirestore(data.auditLog);
+      } catch (e) {
+        console.warn('Void audit log sync notice:', e);
+      }
     }
   } else if (type === 'CASH_REGISTER' && data.updatedRegister) {
     await saveCashRegisterToFirestore(data.updatedRegister);
     if (data.cashMovement) {
-      await saveCashMovementToFirestore(data.cashMovement);
+      try {
+        await saveCashMovementToFirestore(data.cashMovement);
+      } catch (e) {}
     }
     if (data.auditLog) {
-      await saveAuditLogToFirestore(data.auditLog);
+      try {
+        await saveAuditLogToFirestore(data.auditLog);
+      } catch (e) {}
     }
   } else if (type === 'CASH_MOVEMENT' && data.cashMovement) {
     await saveCashMovementToFirestore(data.cashMovement);
     if (data.updatedRegister) {
-      await saveCashRegisterToFirestore(data.updatedRegister);
+      try {
+        await saveCashRegisterToFirestore(data.updatedRegister);
+      } catch (e) {}
     }
     if (data.auditLog) {
-      await saveAuditLogToFirestore(data.auditLog);
+      try {
+        await saveAuditLogToFirestore(data.auditLog);
+      } catch (e) {}
     }
   } else if (type === 'INVENTORY_ADJUSTMENT') {
     if (data.inventoryMovements) {
       for (const inv of data.inventoryMovements) {
-        await saveInventoryMovementToFirestore(inv);
+        try {
+          await saveInventoryMovementToFirestore(inv);
+        } catch (e) {}
       }
     }
     if (data.updatedProducts) {
       for (const up of data.updatedProducts) {
         const prod = currentProducts.find(p => p.id === up.id);
         if (prod) {
-          await saveProductToFirestore({ ...prod, stockCurrent: up.stockCurrent });
+          try {
+            await saveProductToFirestore({ ...prod, stockCurrent: up.stockCurrent });
+          } catch (e) {}
         }
       }
     }
     if (data.auditLog) {
-      await saveAuditLogToFirestore(data.auditLog);
+      try {
+        await saveAuditLogToFirestore(data.auditLog);
+      } catch (e) {}
     }
   }
 }

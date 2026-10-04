@@ -184,12 +184,12 @@ service cloud.firestore {
       allow delete: if isValidId(shiftId) && isAuthorizedTerminalOrAdmin();
     }
 
-    // 9. Audit Logs: Inmutable tracking
+    // 9. Audit Logs: Inmutable tracking (allows idempotent resync)
     match /auditLogs/{logId} {
       allow read: if true;
-      allow create: if isValidId(logId)
+      allow create, update: if isValidId(logId)
         && isValidAuditLog(request.resource.data);
-      allow update, delete: if false;
+      allow delete: if false;
     }
 
     // 10. Admins configuration
