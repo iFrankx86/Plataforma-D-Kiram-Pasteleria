@@ -678,6 +678,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Derived active cash register
   const currentCashRegister = cashRegisters.find(cr => cr.status === 'ABIERTA') || null;
 
+  // Auto-Reconciliation of cash sales and cash movements (ensures no cash sale ever goes missing from caja)
+  useEffect(() => {
+    if (!currentCashRegister || sales.length === 0) return;
+
+    // Find confirmed cash sales in current cash register without a matching cash movement
+    const cashSalesInRegister = sales.filter(
+      s => s.cashRegisterId === currentCashRegister.id && s.status === 'CONFIRMADA'
+    );
+
+    const existingRefs = new Set(cashMovements.map(m => m.reference).filter(Boolean));
+    const missingCashSales = cashSalesInRegister.filter(s => {
+      const cashPortion = (s.payments || []).find(p => p.method === 'EFECTIVO')?.amount || 0;
+      if (cashPortion <= 0) return false;
+      const hasMovement = existingRefs.has(s.id) ||
+                          existingRefs.has(s.code) ||
+                          cashMovements.some(m => m.reason && m.reason.includes(s.code));
+      return !hasMovement;
+    });
+
+    if (missingCashSales.length > 0) {
+      const newMovements: CashMovement[] = [];
+      let totalMissingCash = 0;
+
+      for (const sale of missingCashSales) {
+        const cashPortion = (sale.payments || []).find(p => p.method === 'EFECTIVO')?.amount || 0;
+        totalMissingCash += cashPortion;
+        const mov: CashMovement = {
+          id: `mov-${sale.id.replace('sale-', '')}`,
+          cashRegisterId: currentCashRegister.id,
+          type: 'VENTA_EFECTIVO',
+          amount: cashPortion,
+          reason: `Venta en efectivo ${sale.code}`,
+          reference: sale.id,
+          createdBy: sale.employeeName,
+          createdAt: sale.createdAt,
+        };
+        newMovements.push(mov);
+        saveCashMovementToFirestore(mov).catch(console.warn);
+      }
+
+      setCashMovements(prev => [...newMovements, ...prev]);
+
+      // Reconcile expectedCash on register
+      const reconciledExpected = Number((currentCashRegister.expectedCash + totalMissingCash).toFixed(2));
+      const reconciledRegister = { ...currentCashRegister, expectedCash: reconciledExpected };
+      setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? reconciledRegister : cr));
+      saveCashRegisterToFirestore(reconciledRegister).catch(console.warn);
+    }
+  }, [currentCashRegister?.id, sales, cashMovements]);
+
   // Audit Helper
   const addAuditLog = (action: string, entity: string, entityId: string, details: string) => {
     const newLog: AuditLog = {
@@ -984,11 +1034,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const newExpectedCash = currentCashRegister.expectedCash + cashPortion;
       updatedRegister = { ...currentCashRegister, expectedCash: Number(newExpectedCash.toFixed(2)) };
       setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? updatedRegister! : cr));
+
+      // Persist directly to Firestore
+      saveCashMovementToFirestore(cashMove!).catch(console.warn);
+      saveCashRegisterToFirestore(updatedRegister!).catch(console.warn);
     }
 
     setProducts(updatedProducts);
     setInventoryMovements(prev => [...newInventoryMovements, ...prev]);
     setSales(prev => [newSale, ...prev]);
+
+    // Persist sale and inventory movements directly to Firestore
+    saveSaleToFirestore(newSale).catch(console.warn);
+    newInventoryMovements.forEach(inv => saveInventoryMovementToFirestore(inv).catch(console.warn));
 
     // Create Audit Log
     const saleLog: AuditLog = {
@@ -1002,6 +1060,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString(),
     };
     setAuditLogs(prev => [saleLog, ...prev]);
+    saveAuditLogToFirestore(saleLog).catch(console.warn);
 
     // Offline-First Enqueue for Cloud Sync
     const syncItem = enqueuePendingSync({

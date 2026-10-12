@@ -48,14 +48,44 @@ export const CashRegisterScreen: React.FC = () => {
   const [closingNotes, setClosingNotes] = useState<string>('');
   const [closeError, setCloseError] = useState<string | null>(null);
 
-  // Stats calculation for current open cash register
-  const currentRegisterMovements = currentCashRegister 
-    ? cashMovements.filter(m => m.cashRegisterId === currentCashRegister.id)
-    : [];
-
   const salesInCurrentRegister = currentCashRegister
     ? sales.filter(s => s.cashRegisterId === currentCashRegister.id && s.status === 'CONFIRMADA')
     : [];
+
+  // Stats calculation for current open cash register:
+  // Combines recorded cashMovements AND ensures any confirmed cash sale is visibly listed
+  const currentRegisterMovements = React.useMemo(() => {
+    if (!currentCashRegister) return [];
+    const recorded = cashMovements.filter(m => m.cashRegisterId === currentCashRegister.id);
+    const recordedRefs = new Set(recorded.map(m => m.reference).filter(Boolean));
+
+    // Synthesize any confirmed cash sales that might not have a separate recorded movement yet
+    const extraMovements: typeof recorded = [];
+    for (const sale of salesInCurrentRegister) {
+      const cashPortion = (sale.payments || []).find(p => p.method === 'EFECTIVO')?.amount || 0;
+      if (cashPortion > 0) {
+        const isRecorded = recordedRefs.has(sale.id) || 
+                           recordedRefs.has(sale.code) ||
+                           recorded.some(m => m.reason && m.reason.includes(sale.code));
+        if (!isRecorded) {
+          extraMovements.push({
+            id: `mov-${sale.id.replace('sale-', '')}`,
+            cashRegisterId: currentCashRegister.id,
+            type: 'VENTA_EFECTIVO',
+            amount: cashPortion,
+            reason: `Venta en efectivo ${sale.code}`,
+            reference: sale.id,
+            createdBy: sale.employeeName,
+            createdAt: sale.createdAt,
+          });
+        }
+      }
+    }
+
+    const combined = [...recorded, ...extraMovements];
+    combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return combined;
+  }, [currentCashRegister, cashMovements, salesInCurrentRegister]);
 
   // Cash vs Digital totals
   const cashSalesTotal = salesInCurrentRegister.reduce((sum, s) => {
