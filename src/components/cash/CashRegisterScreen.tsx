@@ -125,6 +125,9 @@ export const CashRegisterScreen: React.FC = () => {
   // Total base de cambio disponible en caja (Fondo Inicial + Abonos de Sencillo - Devoluciones)
   const totalBaseSencillo = (currentCashRegister?.openingAmount || 0) + abonosSencilloTotal - devolucionesSencilloTotal;
 
+  // Total Efectivo Físico Real Esperado en Gaveta (Fórmula matemática contable estricta y transparente)
+  const calculatedExpectedCash = Number((totalBaseSencillo + cashSalesTotal + manualIngresos - manualEgresos).toFixed(2));
+
   const handleOpenRegister = (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(openingAmountInput);
@@ -184,7 +187,7 @@ export const CashRegisterScreen: React.FC = () => {
 
   const handleOpenCloseModal = () => {
     if (!currentCashRegister) return;
-    setCountedCashInput(currentCashRegister.expectedCash.toFixed(2));
+    setCountedCashInput(calculatedExpectedCash.toFixed(2));
     setClosingNotes('');
     setCloseError(null);
     setIsCloseModalOpen(true);
@@ -208,7 +211,7 @@ export const CashRegisterScreen: React.FC = () => {
   };
 
   const countedNum = parseFloat(countedCashInput) || 0;
-  const differenceValue = currentCashRegister ? countedNum - currentCashRegister.expectedCash : 0;
+  const differenceValue = currentCashRegister ? countedNum - calculatedExpectedCash : 0;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
@@ -394,7 +397,7 @@ export const CashRegisterScreen: React.FC = () => {
                 </span>
               </div>
               <div className="font-serif-display text-3xl font-extrabold text-white mt-2">
-                S/ {currentCashRegister.expectedCash.toFixed(2)}
+                S/ {calculatedExpectedCash.toFixed(2)}
               </div>
               <p className="text-[11px] text-amber-100 font-medium mt-1">
                 Base Sencillo (S/ {totalBaseSencillo.toFixed(2)}) + Ventas netas
@@ -986,7 +989,7 @@ export const CashRegisterScreen: React.FC = () => {
 
                 <div className="flex justify-between font-extrabold text-stone-950 pt-2 border-t-2 border-stone-300 text-sm">
                   <span>(=) Efectivo Físico Esperado en Gaveta:</span>
-                  <span className="font-mono text-amber-700">S/ {currentCashRegister.expectedCash.toFixed(2)}</span>
+                  <span className="font-mono text-amber-700">S/ {calculatedExpectedCash.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -998,7 +1001,7 @@ export const CashRegisterScreen: React.FC = () => {
                   </label>
                   <button
                     type="button"
-                    onClick={() => setCountedCashInput(currentCashRegister.expectedCash.toFixed(2))}
+                    onClick={() => setCountedCashInput(calculatedExpectedCash.toFixed(2))}
                     className="text-[11px] text-amber-700 font-semibold hover:underline"
                   >
                     Usar esperado exacto

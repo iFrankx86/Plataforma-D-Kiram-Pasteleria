@@ -675,8 +675,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
-  // Derived active cash register
-  const currentCashRegister = cashRegisters.find(cr => cr.status === 'ABIERTA') || null;
+  // Helper to compute ground-truth physical expected cash in drawer mathematically
+  const computeRegisterExpectedCash = (
+    cr: CashRegister,
+    salesList: Sale[],
+    movementsList: CashMovement[]
+  ): number => {
+    const base = cr.openingAmount || 0;
+    const regMovements = movementsList.filter(m => m.cashRegisterId === cr.id);
+    const regSales = salesList.filter(s => s.cashRegisterId === cr.id && s.status === 'CONFIRMADA');
+
+    const cashSalesTotal = regSales.reduce((sum, s) => {
+      const cashP = (s.payments || []).find(p => p.method === 'EFECTIVO');
+      return sum + (cashP ? cashP.amount : 0);
+    }, 0);
+
+    const abonos = regMovements
+      .filter(m => m.type === 'ABONO_SENCILLO')
+      .reduce((sum, m) => sum + m.amount, 0);
+
+    const devoluciones = regMovements
+      .filter(m => m.type === 'DEVOLUCION_SENCILLO')
+      .reduce((sum, m) => sum + m.amount, 0);
+
+    const manualIngresos = regMovements
+      .filter(m => m.type === 'INGRESO' || (m.type === 'AJUSTE' && m.amount > 0))
+      .reduce((sum, m) => sum + m.amount, 0);
+
+    const manualEgresos = regMovements
+      .filter(m => m.type === 'EGRESO' || m.type === 'RETIRO' || m.type === 'ANULACION_VENTA')
+      .reduce((sum, m) => sum + m.amount, 0);
+
+    return Number((base + abonos - devoluciones + cashSalesTotal + manualIngresos - manualEgresos).toFixed(2));
+  };
+
+  // Derived active cash register (guarantees expectedCash always matches real mathematical cash in drawer)
+  const rawCashRegister = cashRegisters.find(cr => cr.status === 'ABIERTA') || null;
+  const currentCashRegister = React.useMemo(() => {
+    if (!rawCashRegister) return null;
+    const realExpected = computeRegisterExpectedCash(rawCashRegister, sales, cashMovements);
+    if (rawCashRegister.expectedCash !== realExpected) {
+      return { ...rawCashRegister, expectedCash: realExpected };
+    }
+    return rawCashRegister;
+  }, [rawCashRegister, sales, cashMovements]);
 
   // Auto-Reconciliation of cash sales and cash movements (ensures no cash sale ever goes missing from caja)
   useEffect(() => {
@@ -699,11 +741,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (missingCashSales.length > 0) {
       const newMovements: CashMovement[] = [];
-      let totalMissingCash = 0;
 
       for (const sale of missingCashSales) {
         const cashPortion = (sale.payments || []).find(p => p.method === 'EFECTIVO')?.amount || 0;
-        totalMissingCash += cashPortion;
         const mov: CashMovement = {
           id: `mov-${sale.id.replace('sale-', '')}`,
           cashRegisterId: currentCashRegister.id,
@@ -720,11 +760,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       setCashMovements(prev => [...newMovements, ...prev]);
 
-      // Reconcile expectedCash on register
-      const reconciledExpected = Number((currentCashRegister.expectedCash + totalMissingCash).toFixed(2));
-      const reconciledRegister = { ...currentCashRegister, expectedCash: reconciledExpected };
+      // Reconcile expectedCash on register with exact ground-truth formula
+      const realExpected = computeRegisterExpectedCash(currentCashRegister, sales, [...newMovements, ...cashMovements]);
+      const reconciledRegister = { ...currentCashRegister, expectedCash: realExpected };
       setCashRegisters(prev => prev.map(cr => cr.id === currentCashRegister.id ? reconciledRegister : cr));
       saveCashRegisterToFirestore(reconciledRegister).catch(console.warn);
+    } else {
+      // Check if expectedCash stored in register matches ground-truth formula
+      const realExpected = computeRegisterExpectedCash(currentCashRegister, sales, cashMovements);
+      if (rawCashRegister && rawCashRegister.expectedCash !== realExpected) {
+        const reconciledRegister = { ...rawCashRegister, expectedCash: realExpected };
+        setCashRegisters(prev => prev.map(cr => cr.id === rawCashRegister.id ? reconciledRegister : cr));
+        saveCashRegisterToFirestore(reconciledRegister).catch(console.warn);
+      }
     }
   }, [currentCashRegister?.id, sales, cashMovements]);
 
@@ -845,9 +893,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: 'No hay ninguna caja abierta.' };
     }
 
-    const difference = Number((countedCash - currentCashRegister.expectedCash).toFixed(2));
+    const realExpectedCash = computeRegisterExpectedCash(currentCashRegister, sales, cashMovements);
+    const difference = Number((countedCash - realExpectedCash).toFixed(2));
     const closedRegister: CashRegister = {
       ...currentCashRegister,
+      expectedCash: realExpectedCash,
       closedAt: new Date().toISOString(),
       countedCash: Number(countedCash.toFixed(2)),
       difference,
@@ -861,7 +911,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'CIERRE_CAJA', 
       'CASH_REGISTER', 
       currentCashRegister.id, 
-      `Efectivo Esperado: S/ ${currentCashRegister.expectedCash.toFixed(2)} | Contado: S/ ${countedCash.toFixed(2)} | Diferencia: S/ ${difference.toFixed(2)}${notes ? ' | Obs: ' + notes : ''}`
+      `Efectivo Esperado: S/ ${realExpectedCash.toFixed(2)} | Contado: S/ ${countedCash.toFixed(2)} | Diferencia: S/ ${difference.toFixed(2)}${notes ? ' | Obs: ' + notes : ''}`
     );
 
     return { success: true };
